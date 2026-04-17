@@ -1,0 +1,123 @@
+# Pyra IRC Bot — Example Configuration
+# Copy this file to config.yaml and edit for your setup.
+# Run: pybot-setup   for an interactive setup wizard.
+
+# ─────────────────────────────────────────────────────────────
+# CORE BOT SETTINGS
+# ─────────────────────────────────────────────────────────────
+core:
+  nick: "Pyra"                    # IRC nick
+  altnicks:                       # Fallback nicks on collision
+    - "Pyra_"
+    - "Pyra__"
+  realname: "Pyra IRC Bot"        # IRC realname / GECOS
+  ident: "pyra"                   # IRC ident/username
+  command_prefix: "!"             # Command prefix character
+  owner: "YourNick"               # Owner's IRC nick
+  owner_account: ""               # Owner's NickServ account (optional)
+  admins: []                      # Additional admin nicks/accounts
+  log_level: "INFO"               # DEBUG | INFO | WARNING | ERROR
+  log_file: "data/logs/pyra.log"  # Log file path (rotated automatically)
+  log_rotate: true
+
+# ─────────────────────────────────────────────────────────────
+# IRC SERVER(S)
+# ─────────────────────────────────────────────────────────────
+servers:
+  - host: "irc.example.net"
+    port: 6697
+    ssl: true
+    ssl_verify: true              # Set false to skip cert verification
+    password: ""                  # Server password (leave blank if none)
+    priority: 1                   # Lower = tried first; used for failover
+
+  # Add more servers for failover/round-robin:
+  # - host: "irc2.example.net"
+  #   port: 6697
+  #   ssl: true
+  #   priority: 2
+
+# ─────────────────────────────────────────────────────────────
+# AUTHENTICATION (SASL / NickServ)
+# ─────────────────────────────────────────────────────────────
+auth:
+  sasl_mechanism: "PLAIN"         # PLAIN | EXTERNAL | SCRAM-SHA-256 | none
+  sasl_username: ""               # Usually your NickServ account name
+  sasl_password: ""               # NickServ / SASL password
+  nickserv_identify: false        # Fall back to NickServ IDENTIFY if no SASL
+  nickserv_password: ""
+  certfile: ""                    # Path to client cert PEM (for EXTERNAL)
+  keyfile: ""                     # Path to client key PEM (for EXTERNAL)
+
+# ─────────────────────────────────────────────────────────────
+# CHANNELS
+# ─────────────────────────────────────────────────────────────
+channels:
+  autojoin:
+    - "#bots"
+    # - "#another"
+
+  # Per-channel overrides (all optional, inherit global defaults):
+  # channel_config:
+  #   "#bots":
+  #     url_titles: true
+  #     antispam: true
+  #     greet: false
+
+# ─────────────────────────────────────────────────────────────
+# DATABASE
+# ─────────────────────────────────────────────────────────────
+database:
+  # SQLite (default — suitable for single-server installs):
+  url: "sqlite+aiosqlite:///data/pyra.db"
+
+  # PostgreSQL (recommended for production):
+  # url: "postgresql+asyncpg://pyra:password@localhost/pyra"
+
+  # MySQL/MariaDB:
+  # url: "mysql+aiomysql://pyra:password@localhost/pyra"
+
+# ─────────────────────────────────────────────────────────────
+# FLOOD PROTECTION (global defaults; override per-channel)
+# ─────────────────────────────────────────────────────────────
+flood:
+  lines: 5                        # Messages before flood trigger
+  seconds: 2                      # Time window (seconds)
+  burst: 3                        # Burst allowance
+  punishment: "kick"              # none | kick | ban | tempban
+
+# ─────────────────────────────────────────────────────────────
+# PARTY LINE (Telnet admin console)
+# ─────────────────────────────────────────────────────────────
+partyline:
+  enabled: true
+  host: "127.0.0.1"              # IMPORTANT: do not expose to 0.0.0.0
+  port: 3333
+  password: ""                   # Required — set a strong password!
+
+# ─────────────────────────────────────────────────────────────
+# WEB INTERFACE (FastAPI)
+# ─────────────────────────────────────────────────────────────
+web:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  secret_key: ""                 # Required — run: python -c "import secrets; print(secrets.token_hex(32))"
+  debug: false
+  session_timeout: 28800         # Seconds (8 hours)
+
+# ─────────────────────────────────────────────────────────────
+# PLUGINS
+# ─────────────────────────────────────────────────────────────
+plugins:
+  enabled: "all"                 # "all" or list: ["seen", "tell", "help"]
+  disabled: []                   # Plugins to skip even when enabled="all"
+  extra_dir: "plugins_extra/"    # Directory for third-party plugins
+
+# ─────────────────────────────────────────────────────────────
+# ANOPE SERVICES INTEGRATION (optional)
+# ─────────────────────────────────────────────────────────────
+services:
+  enabled: false
+  chanserv_op: true              # Request ChanServ op on join
+  vhost: ""                      # HostServ vhost to set on connect

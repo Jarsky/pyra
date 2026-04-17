@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login — Pyra IRC Bot</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card { width: 360px; }
+  </style>
+</head>
+<body>
+<article class="login-card">
+  <header>
+    <h2>🔥 Pyra IRC Bot</h2>
+    <p>Admin Panel Login</p>
+  </header>
+  {% if error %}
+  <p class="pico-color-red-400"><strong>{{ error }}</strong></p>
+  {% endif %}
+  <form action="/auth/login" method="post">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" required autofocus>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required>
+    <button type="submit">Login</button>
+  </form>
+</article>
+</body>
+</html>

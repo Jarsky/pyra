@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h2>Settings</h2>
+
+{% if not is_owner %}
+<article>
+  <p><strong>Read-only:</strong> You need owner (<code>n</code>) flag to edit settings.</p>
+</article>
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  {% for category, message in messages %}
+  <article class="{{ 'secondary' if category == 'error' else '' }}">{{ message }}</article>
+  {% endfor %}
+{% endif %}
+{% endwith %}
+
+{% if saved %}
+<article>Settings saved successfully.</article>
+{% endif %}
+
+{% if error %}
+<article class="secondary">Error: {{ error }}</article>
+{% endif %}
+
+<form method="post" action="/settings">
+  <label>
+    Configuration (YAML)
+    <small style="display:block;margin-bottom:0.5rem;color:var(--pico-muted-color)">
+      Edit raw YAML configuration. Changes take effect after save. Bot restart may be required for some settings.
+    </small>
+    <textarea name="config_yaml" rows="40"
+              style="font-family:monospace;font-size:0.85rem"
+              {% if not is_owner %}disabled{% endif %}>{{ config_yaml }}</textarea>
+  </label>
+
+  {% if is_owner %}
+  <div style="display:flex;gap:1rem;align-items:center">
+    <button type="submit">Save Settings</button>
+    <small style="color:var(--pico-muted-color)">
+      Settings are validated before saving. Invalid YAML will be rejected.
+    </small>
+  </div>
+  {% endif %}
+</form>
+
+<details style="margin-top:2rem">
+  <summary>Bot Status</summary>
+  <table>
+    <tbody>
+      <tr><td>Nick</td><td><code>{{ status.nick }}</code></td></tr>
+      <tr><td>Server</td><td><code>{{ status.server }}</code></td></tr>
+      <tr><td>Uptime</td><td>{{ status.uptime }}</td></tr>
+      <tr><td>Channels</td><td>{{ status.channels }}</td></tr>
+      <tr><td>Plugins</td><td>{{ status.plugins }}</td></tr>
+      <tr><td>DB URL</td><td><code>{{ status.db_url }}</code></td></tr>
+    </tbody>
+  </table>
+</details>
+{% endblock %}

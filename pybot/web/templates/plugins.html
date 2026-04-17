@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Plugins{% endblock %}
+{% block content %}
+<h2>Plugins ({{ plugins|length }} loaded)</h2>
+
+<table>
+  <thead><tr><th>Name</th><th>Commands</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for p in plugins %}
+  <tr>
+    <td><strong>{{ p.name }}</strong></td>
+    <td>
+      {% for cmd in p.commands[:8] %}
+      <code>!{{ cmd }}</code>
+      {% endfor %}
+      {% if p.commands|length > 8 %}
+      <small>+{{ p.commands|length - 8 }} more</small>
+      {% endif %}
+    </td>
+    <td style="white-space:nowrap">
+      <form action="/plugins/{{ p.name }}/reload" method="post" style="display:inline">
+        <button type="submit" class="outline" style="padding:0.2rem 0.6rem">Reload</button>
+      </form>
+      {% if p.name != 'admin' %}
+      <form action="/plugins/{{ p.name }}/unload" method="post" style="display:inline"
+            onsubmit="return confirm('Unload {{ p.name }}?')">
+        <button type="submit" class="secondary outline" style="padding:0.2rem 0.6rem">Unload</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3">No plugins loaded.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

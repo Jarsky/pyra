@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="grid">
+  <article>
+    <header><strong>Bot Status</strong></header>
+    <p>
+      <span class="status-dot {{ 'online' if connected else 'offline' }}"></span>
+      <strong>{{ nick }}</strong> — {{ 'Connected' if connected else 'Disconnected' }}
+    </p>
+    <p>Server: <code>{{ server }}</code></p>
+    <p>Uptime: <strong id="uptime-val">{{ uptime }}</strong></p>
+    <p>Version: <code>{{ version }}</code></p>
+  </article>
+
+  <article>
+    <header><strong>Channels ({{ channels|length }})</strong></header>
+    {% for ch in channels %}
+    <p>
+      <a href="/channels/{{ ch.name }}/settings"><code>{{ ch.name }}</code></a>
+      — {{ ch.users }} users
+      {% if ch.topic %}<small>{{ ch.topic }}</small>{% endif %}
+    </p>
+    {% else %}
+    <p>No channels joined.</p>
+    {% endfor %}
+  </article>
+</div>
+
+<h3>Recent Events</h3>
+<div class="log-container" id="log-tail">
+  {% for log in logs %}
+  <div class="log-line">[{{ log.logged_at.strftime('%H:%M:%S') if log.logged_at else '?' }}]
+    [{{ log.channel }}] &lt;{{ log.nick }}&gt; {{ log.message or '' }}</div>
+  {% endfor %}
+</div>
+
+<script>
+  // Auto-scroll to bottom of log
+  const logTail = document.getElementById('log-tail');
+  if (logTail) logTail.scrollTop = logTail.scrollHeight;
+</script>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ channel_name }} Settings{% endblock %}
+{% block content %}
+<h2>Settings: <code>{{ channel_name }}</code></h2>
+
+<form action="/channels/{{ channel_name }}/settings" method="post">
+  <div class="grid">
+    <label>Greet on join
+      <select name="greet">
+        <option value="true" {% if settings.greet in ('true','1','yes','on') %}selected{% endif %}>Enabled</option>
+        <option value="false" {% if settings.greet not in ('true','1','yes','on') %}selected{% endif %}>Disabled</option>
+      </select>
+    </label>
+    <label>Antispam
+      <select name="antispam">
+        <option value="true" {% if settings.antispam in ('true','1','yes','on') %}selected{% endif %}>Enabled</option>
+        <option value="false" {% if settings.antispam not in ('true','1','yes','on') %}selected{% endif %}>Disabled</option>
+      </select>
+    </label>
+  </div>
+
+  <label>Greet message <small>(use {nick} and {channel})</small>
+    <input type="text" name="greet_msg" value="{{ settings.greet_msg }}">
+  </label>
+
+  <div class="grid">
+    <label>URL titles
+      <select name="url_titles">
+        <option value="true" {% if settings.url_titles in ('true','1','yes','on') %}selected{% endif %}>Enabled</option>
+        <option value="false" {% if settings.url_titles not in ('true','1','yes','on') %}selected{% endif %}>Disabled</option>
+      </select>
+    </label>
+    <label>Flood action
+      <select name="flood_action">
+        {% for opt in ['none','warn','kick','tempban','ban'] %}
+        <option value="{{ opt }}" {% if settings.flood_action == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Flood lines
+      <input type="number" name="flood_lines" value="{{ settings.flood_lines or 5 }}" min="1">
+    </label>
+    <label>Flood window (s)
+      <input type="number" name="flood_seconds" value="{{ settings.flood_seconds or 3 }}" min="1">
+    </label>
+  </div>
+
+  <button type="submit">Save Settings</button>
+  <a href="/channels" role="button" class="secondary outline">Back</a>
+</form>
+{% endblock %}

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/images/PyraBanner.png" alt="Pyra - Python IRC Bot" />
+</p>
+
 # 🔥 Pyra — Modern Python IRC Bot
 
 <p align="center">

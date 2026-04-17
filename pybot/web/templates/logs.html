@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+{% block content %}
+<h2>Logs</h2>
+
+<form method="get" action="/logs" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem">
+  <input type="text" name="channel" value="{{ filter_channel }}" placeholder="Channel (e.g. #general)">
+  <input type="text" name="nick" value="{{ filter_nick }}" placeholder="Nick">
+  <select name="event_type">
+    <option value="">All events</option>
+    {% for et in ['PRIVMSG','JOIN','PART','QUIT','KICK','MODE','TOPIC'] %}
+    <option value="{{ et }}" {% if filter_event == et %}selected{% endif %}>{{ et }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+  <a href="/logs" role="button" class="secondary outline">Clear</a>
+</form>
+
+<div class="log-container">
+{% for log in logs %}
+<div class="log-line">
+  [{{ log.logged_at.strftime('%Y-%m-%d %H:%M:%S') if log.logged_at else '?' }}]
+  [{{ log.channel }}]
+  [{{ log.event_type }}]
+  &lt;{{ log.nick }}&gt;
+  {{ log.message or '' }}
+</div>
+{% else %}
+<div>No log entries found.</div>
+{% endfor %}
+</div>
+
+<div style="display:flex;gap:1rem;margin-top:1rem">
+  {% if page > 1 %}
+  <a href="/logs?page={{ page-1 }}&channel={{ filter_channel }}&nick={{ filter_nick }}&event_type={{ filter_event }}"
+     role="button" class="outline">← Prev</a>
+  {% endif %}
+  {% if logs|length == 100 %}
+  <a href="/logs?page={{ page+1 }}&channel={{ filter_channel }}&nick={{ filter_nick }}&event_type={{ filter_event }}"
+     role="button" class="outline">Next →</a>
+  {% endif %}
+</div>
+{% endblock %}

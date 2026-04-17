@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<h2>Users</h2>
+
+<form method="get" action="/users">
+  <div style="display:flex;gap:0.5rem">
+    <input type="search" name="q" value="{{ search }}" placeholder="Search by nick or hostmask..."
+           hx-get="/users" hx-trigger="keyup changed delay:400ms" hx-target="body">
+    <button type="submit">Search</button>
+  </div>
+</form>
+
+{% if users %}
+<table>
+  <thead>
+    <tr>
+      <th>Nick</th><th>Hostmask</th><th>Account</th><th>Flags</th><th>Last seen</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for user in users %}
+  <tr>
+    <td><strong>{{ user.nick }}</strong></td>
+    <td class="mono"><small>{{ user.hostmask }}</small></td>
+    <td>{{ user.account or '—' }}</td>
+    <td>
+      <code>{{ user.global_flags }}</code>
+      {% for f in user.flags %}
+        <small title="{{ f.channel or 'global' }}">{{ f.channel or '*' }}+{{ f.flag }}</small>
+      {% endfor %}
+    </td>
+    <td>
+      {% if user.last_seen %}
+        <small>{{ user.last_seen.strftime('%Y-%m-%d %H:%M') }}</small>
+      {% else %}—{% endif %}
+    </td>
+    <td>
+      <form action="/users/{{ user.id }}/delete" method="post" style="display:inline"
+            onsubmit="return confirm('Delete {{ user.nick }}?')">
+        <button type="submit" class="secondary outline" style="padding:0.2rem 0.5rem">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<div style="display:flex;gap:1rem;margin-top:1rem">
+  {% if page > 1 %}
+  <a href="/users?page={{ page-1 }}&q={{ search }}" role="button" class="outline">← Prev</a>
+  {% endif %}
+  <a href="/users?page={{ page+1 }}&q={{ search }}" role="button" class="outline">Next →</a>
+</div>
+{% else %}
+<p>No users found.</p>
+{% endif %}
+{% endblock %}

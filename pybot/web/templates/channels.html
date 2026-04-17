@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Channels{% endblock %}
+{% block content %}
+<h2>Channels</h2>
+{% if channels %}
+<table>
+  <thead><tr><th>Channel</th><th>Users</th><th>Topic</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for ch in channels %}
+  <tr>
+    <td><code>{{ ch.name }}</code></td>
+    <td>{{ ch.nicks|length }}</td>
+    <td>{{ ch.topic[:60] if ch.topic else '—' }}</td>
+    <td><a href="/channels/{{ ch.name }}/settings" role="button" class="outline" style="padding:0.2rem 0.6rem">Settings</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No channels currently joined.</p>
+{% endif %}
+{% endblock %}
