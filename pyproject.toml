@@ -1,0 +1,17 @@
+[project]
+name = "pyra"
+version = "0.1.0"
+description = "Modern Python IRC bot"
+authors = [{name="Jarsky"}]
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "pydantic",
+    "pyyaml"
+]
+
+[project.scripts]
+pybot = "pybot.__main__:main"
