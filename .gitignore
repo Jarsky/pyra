@@ -25,7 +25,6 @@ env/
 config/config.yaml
 
 # Runtime data
-data/
 *.db
 *.sqlite
 *.sqlite3

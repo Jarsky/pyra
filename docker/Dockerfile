@@ -4,10 +4,10 @@ RUN useradd -m -u 1000 pyra
 
 WORKDIR /app
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e ".[postgres]"
-
+COPY pyproject.toml README.md ./
 COPY pybot/ ./pybot/
+RUN pip install --no-cache-dir ".[postgres]"
+
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 

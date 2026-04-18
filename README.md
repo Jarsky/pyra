@@ -35,21 +35,21 @@
 
 ```bash
 git clone https://github.com/Jarsky/pyra.git
-cd pyra_project/docker
+cd docker
 
 # Copy and edit the config
 cp ../config/config.example.yaml data/config.yaml
 $EDITOR data/config.yaml
 
 # Start
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Native install
 
 ```bash
 git clone https://github.com/Jarsky/pyra.git
-cd pyra_project
+cd pyra
 
 python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
@@ -66,7 +66,12 @@ pybot --config config/config.yaml
 
 ```bash
 cd docker
-POSTGRES_PASSWORD=secret docker-compose -f docker-compose.prod.yml up -d
+
+# Create your .env file with the DB password (gitignored)
+cp .env.example .env
+$EDITOR .env   # set POSTGRES_PASSWORD
+
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ---
