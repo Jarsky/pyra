@@ -112,6 +112,31 @@ async def periodic_task(bot):
 
 Drop `.py` files into `plugins_extra/` — they load automatically.
 
+### Plugin API keys & settings
+
+API keys and per-plugin settings live in `config.yaml` under `plugins.vars` — gitignored, so secrets never touch source control:
+
+```yaml
+# config/config.yaml
+plugins:
+  vars:
+    myplugin:
+      api_key: "your-secret-key"
+      max_results: 5
+```
+
+Read them in your plugin with `bot.plugin_config("myplugin")`:
+
+```python
+@plugin.command("query")
+async def cmd_query(bot, trigger):
+    cfg = bot.plugin_config("myplugin")
+    api_key = cfg.get("api_key", "")
+    ...
+```
+
+Returns `{}` if no vars are configured, so `.get("key", default)` is always safe.
+
 See [docs/plugins.md](docs/plugins.md) for full API reference.
 
 ---

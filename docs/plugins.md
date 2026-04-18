@@ -165,9 +165,41 @@ from pybot.core.database import (
 
 ---
 
+## Plugin Config Vars (API Keys & Settings)
+
+Static configuration — API keys, endpoints, feature flags — lives in `config.yaml` under `plugins.vars.<plugin_name>`. This section is in the runtime config file which is gitignored, so secrets stay out of source control.
+
+**config.yaml:**
+```yaml
+plugins:
+  vars:
+    myplugin:
+      api_key: "your-secret-key"
+      endpoint: "https://api.example.com/v1"
+      max_results: 5
+```
+
+**Reading in a plugin:**
+```python
+@plugin.command("query")
+async def cmd_query(bot, trigger):
+    cfg = bot.plugin_config("myplugin")
+    api_key = cfg.get("api_key", "")
+    if not api_key:
+        await bot.reply(trigger, "No API key configured — set plugins.vars.myplugin.api_key in config.yaml")
+        return
+    endpoint = cfg.get("endpoint", "https://api.example.com/v1")
+    max_results = int(cfg.get("max_results", 3))
+    ...
+```
+
+`bot.plugin_config(name)` returns an empty dict `{}` if the plugin has no vars configured, so `.get("key", default)` is always safe.
+
+---
+
 ## Plugin Settings
 
-Store per-plugin configuration in the `plugin_settings` table:
+Store per-plugin configuration in the `plugin_settings` table (for *user-supplied* runtime data like saved locations, preferences):
 
 ```python
 from pybot.core.database import get_session, get_plugin_setting, set_plugin_setting

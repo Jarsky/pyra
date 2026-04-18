@@ -18,7 +18,8 @@ _WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
 
 def _is_imperial(bot: object) -> bool:
-    return bot.plugin_config("weather").get("units", "metric") == "imperial"  # type: ignore[attr-defined]
+    cfg: dict[str, object] = bot.plugin_config("weather")  # type: ignore[attr-defined]
+    return cfg.get("units", "metric") == "imperial"
 
 
 @plugin.command(
