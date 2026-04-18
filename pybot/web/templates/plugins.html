@@ -21,6 +21,9 @@
   <tr>
     <td>
       <a href="/plugins/{{ p.name }}" style="text-decoration:none;color:inherit;"><strong>{{ p.name }}</strong></a>
+      <div style="margin-top:0.15rem;font-size:0.73rem;color:var(--muted-color);text-transform:uppercase;letter-spacing:0.04em;">
+        {{ 'Core' if p.source == 'core' else 'Extra' }} plugin
+      </div>
       {% if p.meta.description %}
       <div style="margin-top:0.2rem;font-size:0.78rem;color:var(--muted-color);">{{ p.meta.description }}</div>
       {% endif %}

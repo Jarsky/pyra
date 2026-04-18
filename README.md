@@ -20,7 +20,8 @@
 - **Full IRC/IRCv3 support** — TLS, SASL (PLAIN/EXTERNAL/SCRAM-SHA-256), CAP negotiation, flood protection
 - **Async throughout** — single asyncio event loop, no threads
 - **Plugin system** — decorator-based API, hot reload via SIGHUP or watchdog
-- **15 built-in plugins** — admin, antispam, calc, choose, dice, greet, help, notes, search, seen, tell, uptime, url, weather, adminchannel
+- **14 built-in plugins** — admin, adminchannel, antispam, calc, choose, dice, greet, help, karma, notes, search, seen, tell, uptime
+- **Optional extras in plugins_extra/** — headlines, weather, url, arrnotify, invite, movies, lastfm, and more
 - **Eggdrop-style permissions** — `n/a/o/v/b/I/X` flags, per-channel overrides, hostmask wildcards
 - **Web admin UI** — FastAPI + Jinja2 + HTMX, no Node/React required
 - **Partyline** — telnet admin console with multi-user chat, live IRC stream
@@ -220,7 +221,8 @@ alembic revision --autogenerate -m "describe change"
 
 ## Built-in Plugins
 
-Included plugins cover administration, moderation, antispam, utilities, notes, offline tells, search, URL titles, and weather.
+Included built-in plugins cover administration, moderation, antispam, utilities, notes, offline tells, and search.
+Optional plugins in `plugins_extra/` include URL titles, weather, headlines, and additional integrations.
 
 See [docs/plugins.md](docs/plugins.md) for plugin details and [plugins_extra/OPTIONAL_PLUGINS.md](plugins_extra/OPTIONAL_PLUGINS.md) for optional extras.
 

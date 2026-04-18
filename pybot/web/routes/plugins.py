@@ -19,6 +19,13 @@ def _plugin_meta(loader: Any, name: str) -> dict[str, str]:
     return getattr(module, "__plugin_meta__", {}) if module else {}
 
 
+def _plugin_source(path_str: str) -> str:
+    lower = path_str.replace("\\", "/").lower()
+    if "/plugins_extra/" in lower or lower.endswith("/plugins_extra"):
+        return "extra"
+    return "core"
+
+
 @router.get("/", response_class=HTMLResponse)
 async def plugins_list(
     request: Request,
@@ -50,6 +57,7 @@ async def plugins_list(
                     "commands": cmds,
                     "loaded": name in loaded,
                     "meta": _plugin_meta(loader, name),
+                    "source": _plugin_source(str(path)),
                 }
             )
 
@@ -91,6 +99,9 @@ async def plugin_detail(
         )
 
     meta = _plugin_meta(loader, plugin_name)
+    available_paths = loader.get_available_plugins() if loader else {}
+    plugin_path = str(available_paths.get(plugin_name, ""))
+    source = _plugin_source(plugin_path) if plugin_path else "core"
     commands: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
     intervals: list[dict[str, Any]] = []
@@ -146,6 +157,7 @@ async def plugin_detail(
             "config_vars": config_vars,
             "loaded": loaded,
             "available": available,
+            "source": source,
         },
     )
 

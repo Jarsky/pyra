@@ -22,6 +22,9 @@
   <span class="plugin-status {{ 'loaded' if loaded else 'unloaded' }}" style="font-size:0.8rem;padding:0.2rem 0.6rem;">
     {{ 'Loaded' if loaded else 'Unloaded' }}
   </span>
+  <span class="plugin-status" style="font-size:0.72rem;padding:0.18rem 0.55rem;background:rgba(255,255,255,0.08);color:var(--muted-color);">
+    {{ 'Core' if source == 'core' else 'Extra' }}
+  </span>
   {% else %}
   <span class="plugin-status unloaded" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Not found</span>
   {% endif %}
@@ -79,7 +82,37 @@
         {% for k, v in config_vars.items() %}
         <tr>
           <td><code class="config-key">{{ k }}</code></td>
-          <td style="color:var(--muted-color);">{{ v if v else '<em>empty</em>' | safe }}</td>
+          <td style="color:var(--muted-color);">
+            {% if v is mapping %}
+              {% if plugin_name == 'headlines' and k == 'feeds' %}
+                {% for feed_name, feed_url in v.items() %}
+                  <div>
+                    <code class="config-key">{{ feed_name }}</code>:
+                    <a href="{{ feed_url }}" target="_blank" rel="noopener noreferrer">{{ feed_url }}</a>
+                  </div>
+                {% endfor %}
+              {% else %}
+                {% for sub_k, sub_v in v.items() %}
+                  <div>
+                    <code class="config-key">{{ sub_k }}</code>:
+                    {% if sub_v is string and (sub_v.startswith('http://') or sub_v.startswith('https://')) %}
+                      <a href="{{ sub_v }}" target="_blank" rel="noopener noreferrer">{{ sub_v }}</a>
+                    {% else %}
+                      {{ sub_v }}
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              {% endif %}
+            {% elif v is sequence and v is not string %}
+              {% for item in v %}
+                <div>{{ item }}</div>
+              {% endfor %}
+            {% elif v is string and (v.startswith('http://') or v.startswith('https://')) %}
+              <a href="{{ v }}" target="_blank" rel="noopener noreferrer">{{ v }}</a>
+            {% else %}
+              {{ v if v else '<em>empty</em>' | safe }}
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

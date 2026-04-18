@@ -116,12 +116,21 @@ web:
 
 ```yaml
 plugins:
-  dirs:
-    - "pybot/plugins"      # Built-in plugins
-    - "plugins_extra"      # User plugins
-  disabled:
-    - weather              # Disable specific built-ins
-  autoload: true           # Load all plugins in dirs on startup
+  enabled: "all"                  # or list: ["help", "seen", "search"]
+  disabled: []                     # explicit deny-list
+  extra_dir: "/plugins_extra"     # Docker default; can be relative on bare metal
+  vars:
+    search:
+      max_results: 3
+    # Optional plugins in plugins_extra/
+    # weather:
+    #   units: metric
+    # url:
+    #   max_title_length: 200
+    # headlines:
+    #   include_global_feeds: true
+    #   include_community_feeds: true
+    #   default_feed: "reuters_world"
 ```
 
 ---

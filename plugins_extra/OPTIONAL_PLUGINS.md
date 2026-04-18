@@ -1,18 +1,28 @@
-# Pyra Plugin Staging
+# Optional Plugins (`plugins_extra`)
 
-This folder is a staging area for plugin conversions from the temporary `eggdrop-scripts/` import.
+This directory contains first-party optional plugins that are loaded at runtime
+via `plugins.extra_dir` (default: `/plugins_extra` in Docker).
 
-Current intent:
+How this directory is used:
 
-- prototype converted plugins before deciding where they belong
-- separate bundled-core candidates from optional extra plugins
-- keep first-party custom conversions separate from direct Eggdrop-core ports
+- keep non-core or integration-heavy plugins separate from built-in plugins
+- allow easy add/remove without touching the core plugin package
+- keep per-plugin configuration under `plugins.vars.<plugin_name>` in `config.yaml`
 
-Notes:
+Runtime behavior:
 
-- The current bot does not automatically load plugins from this folder.
-- Built-in plugins belong in `pybot/plugins/`.
-- Optional runtime plugins currently belong in `plugins_extra/`.
-- This folder exists to keep migration work organized while we classify and port functionality.
+- plugins in this directory are discovered automatically when `extra_dir` exists
+- they appear in the Web UI Plugins page with source labeled as `Extra`
+- they can be loaded, unloaded, and reloaded from the Web UI
 
-See [docs/eggdrop-migration-plan.md](../docs/eggdrop-migration-plan.md) for the current conversion inventory.
+Current optional plugins include:
+
+- `headlines`, `weather`, `url`
+- `arrnotify`, `invite`, `ipinfo`, `lastfm`, `movies`
+- `remind`, `selfauth`, `timebot`, `translate`, `tvmaze`, `voting`
+
+Notes for maintainers:
+
+- keep plugin metadata (`__plugin_meta__`) updated so Web UI details stay accurate
+- prefer documenting plugin vars in each plugin docstring
+- if a plugin becomes universally useful and low-risk, it can be promoted to `pybot/plugins/`

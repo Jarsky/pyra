@@ -1,25 +1,29 @@
 """
-Headlines plugin — Fetch and display news from RSS feeds.
+Headlines plugin - fetch and display news from RSS feeds.
 
 Author:  Jarsky
 Version: 1.0.0
 Date:    2026-04-18
 
-Supports multiple news sources (CNN, RNZ, The Guardian, etc.).
+Supports global defaults plus optional community feeds.
 
 Commands:
-  !news [feed]       Show latest headlines from default or named feed
-  !headlines [feed]  Alias for !news
-  !feeds             List available feed names
+    !news [feed]                 Show latest headlines from default or named feed
+    !headlines [feed]            Alias for !news
+    !headlines list              List available feed names
+    !headlines set <feed>        Save preferred feed for your nick
+    !feeds                       Quick command to list feed names
 
 Plugin vars (config.yaml plugins.vars.headlines):
+    include_global_feeds: true      # Include built-in global defaults
+    include_community_feeds: true   # Keep local/community defaults enabled
   feeds:
-    cnn: "http://rss.cnn.com/rss/edition_world.rss"
-    rnz: "https://www.rnz.co.nz/rss/world.xml"
+        reuters_world: "https://www.reutersagency.com/feed/?best-topics=world&post_type=best"
+        nz_rnz_world: "https://www.rnz.co.nz/rss/world.xml"
     # ... add more feeds
-  default_feed: "cnn"  # Used if no feed name specified
-  cache_seconds: 3600  # How long to cache RSS feed results
-  max_headlines: 5     # Max headlines to display per request
+    default_feed: "reuters_world"   # Used if no feed name specified
+    cache_seconds: 3600              # How long to cache RSS feed results
+    max_headlines: 5                 # Max headlines to display per request
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ __plugin_meta__ = {
     "author": "Jarsky",
     "version": "1.0.0",
     "updated": "2026-04-18",
-    "description": "News headlines from configurable RSS feeds (CNN, RNZ, Guardian, etc.).",
+    "description": "Configurable RSS headlines with global defaults and optional local feeds.",
     "url": "https://github.com/Jarsky/pyra",
 }
 
@@ -40,30 +44,46 @@ import httpx
 from pybot import plugin
 from pybot.plugin import Trigger
 
-_DEFAULT_FEEDS = {
-    "cnn": "http://rss.cnn.com/rss/edition_world.rss",
-    "rnz": "https://www.rnz.co.nz/rss/world.xml",
-    "stuff": "https://www.stuff.co.nz/rss",
-    "guardian": "https://www.theguardian.com/uk-news/rss",
-    "cbc": "https://www.cbc.ca/cmlink/rss-canada",
-    "9news": "https://www.9news.com.au/national/rss",
+_GLOBAL_DEFAULT_FEEDS = {
+    "reuters_world": "https://www.reutersagency.com/feed/?best-topics=world&post_type=best",
+    "bbc_world": "http://feeds.bbci.co.uk/news/world/rss.xml",
+    "npr_world": "https://feeds.npr.org/1004/rss.xml",
+    "aljazeera": "https://www.aljazeera.com/xml/rss/all.xml",
+}
+
+_COMMUNITY_DEFAULT_FEEDS = {
+    "nz_rnz_world": "https://www.rnz.co.nz/rss/world.xml",
+    "nz_stuff": "https://www.stuff.co.nz/rss",
+    "au_9news": "https://www.9news.com.au/national/rss",
+    "guardian_uk": "https://www.theguardian.com/uk-news/rss",
+    "cbc_ca": "https://www.cbc.ca/cmlink/rss-canada",
 }
 
 
 def _get_feed_config(bot: object) -> dict[str, str]:
-    """Get feed URLs from config, or use defaults."""
+    """Get feed URLs from config with sensible global defaults."""
     cfg: dict[str, object] = bot.plugin_config("headlines")  # type: ignore[attr-defined]
+    include_global = bool(cfg.get("include_global_feeds", True))
+    include_community = bool(cfg.get("include_community_feeds", True))
+
+    merged: dict[str, str] = {}
+    if include_global:
+        merged.update(_GLOBAL_DEFAULT_FEEDS)
+    if include_community:
+        merged.update(_COMMUNITY_DEFAULT_FEEDS)
+
     feeds = cfg.get("feeds", {})
     if isinstance(feeds, dict):
-        return {**_DEFAULT_FEEDS, **feeds}
-    return _DEFAULT_FEEDS
+        merged.update({str(k): str(v) for k, v in feeds.items()})
+
+    return merged
 
 
 def _get_default_feed(bot: object) -> str:
     """Get default feed name from config."""
     cfg: dict[str, object] = bot.plugin_config("headlines")  # type: ignore[attr-defined]
-    default = cfg.get("default_feed", "cnn")
-    return str(default) if isinstance(default, str) else "cnn"
+    default = cfg.get("default_feed", "reuters_world")
+    return str(default) if isinstance(default, str) else "reuters_world"
 
 
 def _get_cache_seconds(bot: object) -> int:
@@ -78,6 +98,16 @@ def _get_max_headlines(bot: object) -> int:
     cfg: dict[str, object] = bot.plugin_config("headlines")  # type: ignore[attr-defined]
     max_h = cfg.get("max_headlines", 5)
     return int(max_h) if isinstance(max_h, int) else 5
+
+
+@plugin.command("feeds", help="List available headline feeds", usage="!feeds")
+async def cmd_feeds(bot: object, trigger: Trigger) -> None:
+    feeds = _get_feed_config(bot)
+    if not feeds:
+        await bot.reply(trigger, "No feeds configured.")  # type: ignore[attr-defined]
+        return
+    feed_list = ", ".join(sorted(feeds.keys()))
+    await bot.say(trigger.target, f"\x0303Available feeds: {feed_list}")  # type: ignore[attr-defined]
 
 
 async def _fetch_rss(url: str, timeout: float = 10.0) -> list[tuple[str, str]] | None:
@@ -180,7 +210,7 @@ async def _set_cached_headlines(
     "headlines",
     aliases=["news"],
     help="Fetch and display news headlines",
-    usage="!headlines [feed_name | list | set <feed>]",
+    usage="!headlines [feed | list | set <feed>]",
 )
 async def cmd_headlines(bot: object, trigger: Trigger) -> None:
     from pybot.core.database import get_plugin_setting, get_session, set_plugin_setting
@@ -194,12 +224,8 @@ async def cmd_headlines(bot: object, trigger: Trigger) -> None:
     if trigger.args:
         subcommand = trigger.args[0].lower()
 
-        if subcommand == "list":
-            # List all available feeds
-            feed_list = ", ".join(sorted(feeds.keys()))
-            await bot.say(  # type: ignore[attr-defined]
-                trigger.target, f"\x0303Available feeds: {feed_list}"
-            )
+        if subcommand in {"list", "sources"}:
+            await cmd_feeds(bot, trigger)
             return
 
         elif subcommand == "set" and len(trigger.args) > 1:

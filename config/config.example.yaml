@@ -122,26 +122,27 @@ plugins:
   # configuration reference — each plugin documents its own vars block.
   vars:
     # ── Built-in plugin config ─────────────────────────────────────────────
-    weather:
-      # Open-Meteo is free and needs no key. Uncomment if using a different provider:
-      # api_key: ""
-      units: metric                # metric | imperial
-
     search:
       max_results: 3
-
-    url:
-      max_title_length: 200
-      ignore_domains: []           # e.g. ["localhost", "192.168."]
 
     # ── plugins_extra/ config (uncomment and fill to enable) ───────────────
     # Each entry below corresponds to a plugin in plugins_extra/.
     # See that plugin's file header for full documentation of every key.
     #
+    # weather:
+    #   units: metric                # metric | imperial
+    #
+    # url:
+    #   max_title_length: 200
+    #   ignore_domains: []           # e.g. ["localhost", "192.168."]
+    #
     # headlines:
+    #   include_global_feeds: true
+    #   include_community_feeds: true
     #   feeds:
-    #     cnn: "http://rss.cnn.com/rss/edition_world.rss"
-    #   default_feed: "cnn"
+    #     reuters_world: "https://www.reutersagency.com/feed/?best-topics=world&post_type=best"
+    #     nz_rnz_world: "https://www.rnz.co.nz/rss/world.xml"
+    #   default_feed: "reuters_world"
     #   cache_seconds: 3600
     #   max_headlines: 5
     #
