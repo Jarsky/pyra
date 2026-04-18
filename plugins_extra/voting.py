@@ -23,10 +23,54 @@ import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from pybot import plugin
+from pybot.core.database import Base
 from pybot.plugin import Trigger
 
 _DURATION_RE = re.compile(r"^(?:(\d+)h)?(?:(\d+)m)?$")
+
+
+class Poll(Base):
+    """A channel poll / vote."""
+
+    __tablename__ = "polls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    channel: Mapped[str] = mapped_column(String(128), index=True)
+    topic: Mapped[str] = mapped_column(Text)
+    answers: Mapped[str] = mapped_column(Text)  # JSON list of answer strings
+    starter_nick: Mapped[str] = mapped_column(String(64))
+    starter_hostmask: Mapped[str] = mapped_column(String(256))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    votes: Mapped[list["PollVote"]] = relationship(
+        "PollVote", back_populates="poll", cascade="all, delete-orphan"
+    )
+
+
+class PollVote(Base):
+    """A single vote cast in a Poll."""
+
+    __tablename__ = "poll_votes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    poll_id: Mapped[int] = mapped_column(Integer, ForeignKey("polls.id"), index=True)
+    hostmask: Mapped[str] = mapped_column(String(256))
+    answer: Mapped[str] = mapped_column(String(200))
+    voted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+    poll: Mapped["Poll"] = relationship("Poll", back_populates="votes")
+
+
+async def setup(bot: object) -> None:
+    from pybot.core.database import ensure_plugin_tables
+
+    await ensure_plugin_tables(Poll, PollVote)
 
 
 def _parse_duration(s: str) -> int | None:
@@ -57,26 +101,32 @@ def _fmt_results(topic: str, answers: list[str], votes: list[str]) -> list[str]:
 async def cmd_vote(bot: object, trigger: Trigger) -> None:
     from sqlalchemy import select
 
-    from pybot.core.database import Poll, PollVote, get_session
+    from pybot.core.database import get_session
 
     channel = trigger.channel or trigger.nick
 
     # ── No args: show status ───────────────────────────────────────────────
     if not trigger.args:
         async with get_session() as session:
-            poll = (await session.execute(
-                select(Poll).where(Poll.channel == channel)
-                .order_by(Poll.started_at.desc())
-            )).scalar_one_or_none()
+            poll = (
+                await session.execute(
+                    select(Poll).where(Poll.channel == channel).order_by(Poll.started_at.desc())
+                )
+            ).scalar_one_or_none()
             if not poll:
                 await bot.reply(  # type: ignore[attr-defined]
                     trigger, "No poll yet. Start one: !vote <dur>|<topic>|<ans1>:<ans2>"
                 )
                 return
             answers = json.loads(poll.answers)
-            votes = [v.answer for v in (await session.execute(
-                select(PollVote).where(PollVote.poll_id == poll.id)
-            )).scalars().all()]
+            votes = [
+                v.answer
+                for v in (
+                    await session.execute(select(PollVote).where(PollVote.poll_id == poll.id))
+                )
+                .scalars()
+                .all()
+            ]
         label = "ACTIVE" if not poll.ended else "ENDED"
         for line in _fmt_results(f"{poll.topic} [{label}]", answers, votes):
             await bot.say(channel, line)  # type: ignore[attr-defined]
@@ -103,9 +153,11 @@ async def cmd_vote(bot: object, trigger: Trigger) -> None:
             return
 
         async with get_session() as session:
-            existing = (await session.execute(
-                select(Poll).where(Poll.channel == channel, Poll.ended == False)  # noqa: E712
-            )).scalar_one_or_none()
+            existing = (
+                await session.execute(
+                    select(Poll).where(Poll.channel == channel, Poll.ended == False)  # noqa: E712
+                )
+            ).scalar_one_or_none()
             if existing:
                 await bot.reply(  # type: ignore[attr-defined]
                     trigger, f"Poll already active: '{existing.topic}' — !endvote first"
@@ -137,10 +189,13 @@ async def cmd_vote(bot: object, trigger: Trigger) -> None:
     # ── Cast a vote ────────────────────────────────────────────────────────
     answer = raw.strip()
     async with get_session() as session:
-        poll = (await session.execute(
-            select(Poll).where(Poll.channel == channel, Poll.ended == False)  # noqa: E712
-            .order_by(Poll.started_at.desc())
-        )).scalar_one_or_none()
+        poll = (
+            await session.execute(
+                select(Poll)
+                .where(Poll.channel == channel, Poll.ended == False)  # noqa: E712
+                .order_by(Poll.started_at.desc())
+            )
+        ).scalar_one_or_none()
         if not poll:
             await bot.reply(trigger, "No active poll.")  # type: ignore[attr-defined]
             return
@@ -149,11 +204,13 @@ async def cmd_vote(bot: object, trigger: Trigger) -> None:
         if not matched:
             await bot.reply(trigger, f"Invalid answer. Choose: {', '.join(answers)}")  # type: ignore[attr-defined]
             return
-        existing_vote = (await session.execute(
-            select(PollVote).where(
-                PollVote.poll_id == poll.id, PollVote.hostmask == trigger.hostmask
+        existing_vote = (
+            await session.execute(
+                select(PollVote).where(
+                    PollVote.poll_id == poll.id, PollVote.hostmask == trigger.hostmask
+                )
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
         if existing_vote:
             existing_vote.answer = matched
             await bot.reply(trigger, f"Vote changed to: \x02{matched}\x02")  # type: ignore[attr-defined]
@@ -166,14 +223,16 @@ async def cmd_vote(bot: object, trigger: Trigger) -> None:
 async def cmd_endvote(bot: object, trigger: Trigger) -> None:
     from sqlalchemy import select
 
-    from pybot.core.database import Poll, PollVote, get_session
+    from pybot.core.database import get_session
 
     channel = trigger.channel or trigger.nick
 
     async with get_session() as session:
-        poll = (await session.execute(
-            select(Poll).where(Poll.channel == channel, Poll.ended == False)  # noqa: E712
-        )).scalar_one_or_none()
+        poll = (
+            await session.execute(
+                select(Poll).where(Poll.channel == channel, Poll.ended == False)  # noqa: E712
+            )
+        ).scalar_one_or_none()
         if not poll:
             await bot.reply(trigger, "No active poll.")  # type: ignore[attr-defined]
             return
@@ -182,9 +241,12 @@ async def cmd_endvote(bot: object, trigger: Trigger) -> None:
             return
         poll.ended = True
         answers = json.loads(poll.answers)
-        votes = [v.answer for v in (await session.execute(
-            select(PollVote).where(PollVote.poll_id == poll.id)
-        )).scalars().all()]
+        votes = [
+            v.answer
+            for v in (await session.execute(select(PollVote).where(PollVote.poll_id == poll.id)))
+            .scalars()
+            .all()
+        ]
 
     await bot.say(channel, "\x02POLL ENDED\x02")  # type: ignore[attr-defined]
     for line in _fmt_results(poll.topic, answers, votes):
@@ -194,7 +256,7 @@ async def cmd_endvote(bot: object, trigger: Trigger) -> None:
 async def _end_poll(bot: object, channel: str, poll_id: int) -> None:
     from sqlalchemy import select
 
-    from pybot.core.database import Poll, PollVote, get_session
+    from pybot.core.database import get_session
 
     async with get_session() as session:
         poll = await session.get(Poll, poll_id)
@@ -202,9 +264,12 @@ async def _end_poll(bot: object, channel: str, poll_id: int) -> None:
             return
         poll.ended = True
         answers = json.loads(poll.answers)
-        votes = [v.answer for v in (await session.execute(
-            select(PollVote).where(PollVote.poll_id == poll_id)
-        )).scalars().all()]
+        votes = [
+            v.answer
+            for v in (await session.execute(select(PollVote).where(PollVote.poll_id == poll_id)))
+            .scalars()
+            .all()
+        ]
 
     await bot.say(channel, "\x02POLL ENDED\x02")  # type: ignore[attr-defined]
     for line in _fmt_results(poll.topic, answers, votes):

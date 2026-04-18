@@ -348,40 +348,6 @@ class ScheduledTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
 
 
-class Poll(Base):
-    """A channel poll / vote."""
-
-    __tablename__ = "polls"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    channel: Mapped[str] = mapped_column(String(128), index=True)
-    topic: Mapped[str] = mapped_column(Text)
-    answers: Mapped[str] = mapped_column(Text)  # JSON list of answer strings
-    starter_nick: Mapped[str] = mapped_column(String(64))
-    starter_hostmask: Mapped[str] = mapped_column(String(256))
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
-    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    ended: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    votes: Mapped[list["PollVote"]] = relationship(
-        "PollVote", back_populates="poll", cascade="all, delete-orphan"
-    )
-
-
-class PollVote(Base):
-    """A single vote cast in a Poll."""
-
-    __tablename__ = "poll_votes"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    poll_id: Mapped[int] = mapped_column(Integer, ForeignKey("polls.id"), index=True)
-    hostmask: Mapped[str] = mapped_column(String(256))
-    answer: Mapped[str] = mapped_column(String(200))
-    voted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
-
-    poll: Mapped["Poll"] = relationship("Poll", back_populates="votes")
-
-
 class Karma(Base):
     """Karma score for an IRC nick."""
 
