@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import httpx
+from typing import Any
 
 from pybot import plugin
 from pybot.plugin import Trigger
@@ -46,7 +47,7 @@ async def cmd_define(bot: object, trigger: Trigger) -> None:
     await bot.say(trigger.target, result)  # type: ignore[attr-defined]
 
 
-async def _ddg_search(query: str) -> str:
+async def _ddg_search(query: str) -> Any:
     try:
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
             resp = await client.get(
@@ -62,7 +63,7 @@ async def _ddg_search(query: str) -> str:
             )
             data = resp.json()
     except Exception as exc:
-        return f"Search error: {exc}"
+        return f"Search error: {exc!r}"  # type: ignore[no-any-return]
 
     abstract = data.get("AbstractText", "").strip()
     if abstract:
@@ -70,7 +71,7 @@ async def _ddg_search(query: str) -> str:
 
     answer = data.get("Answer", "").strip()
     if answer:
-        return answer[:350]
+        return answer[:350]  # type: ignore[no-any-return]
 
     related = data.get("RelatedTopics", [])
     if related:

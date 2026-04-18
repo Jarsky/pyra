@@ -7,6 +7,7 @@ import getpass
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -158,9 +159,9 @@ def main() -> None:
             print("Aborted.")
             sys.exit(0)
 
-    cfg = CONFIG_TEMPLATE.copy()
-    cfg["core"] = dict(cfg["core"])
-    cfg["servers"] = [dict(cfg["servers"][0])]
+    cfg: dict[str, Any] = CONFIG_TEMPLATE.copy()
+    cfg["core"] = cfg["core"].copy()
+    cfg["servers"] = [cfg["servers"][0].copy()]
 
     # Bot identity
     _section("Bot Identity")

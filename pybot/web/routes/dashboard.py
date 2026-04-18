@@ -38,6 +38,7 @@ async def dashboard(
         logs = result.scalars().all()
 
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
             "request": request,

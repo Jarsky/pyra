@@ -40,6 +40,7 @@ async def logs_view(
         logs = result.scalars().all()
 
     return templates.TemplateResponse(
+        request,
         "logs.html",
         {
             "request": request,

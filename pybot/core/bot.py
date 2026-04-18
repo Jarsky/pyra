@@ -246,13 +246,13 @@ class PyraBot:
                 cmd_name = parts[0].lower()
                 args = parts[1:]
 
-                for handler in registry.commands.get(cmd_name, []):
+                for handler in registry.commands.get(cmd_name, []):  # type: ignore[assignment]
                     trigger = await self._build_trigger(msg, args=args, match=None)
                     if trigger is None:
                         continue
                     # Check privilege
-                    if handler.privilege and not await self._check_privilege(
-                        trigger, handler.privilege
+                    if handler.privilege and not await self._check_privilege(  # type: ignore[attr-defined]
+                        trigger, handler.privilege  # type: ignore[attr-defined]
                     ):
                         await self.notice(trigger.nick, "Permission denied.")
                         continue
@@ -355,10 +355,10 @@ class PyraBot:
 
     async def _check_privilege(self, trigger: Any, required_flag: str) -> bool:
         if required_flag == "n":
-            return trigger.owner
+            return trigger.owner  # type: ignore[no-any-return]
         if required_flag == "a":
-            return trigger.admin
-        return await trigger.has_flag(required_flag, trigger.channel)
+            return trigger.admin  # type: ignore[no-any-return]
+        return await trigger.has_flag(required_flag, trigger.channel)  # type: ignore[no-any-return]
 
     # ------------------------------------------------------------------
     # Internal IRC event handlers (channel state tracking)
@@ -587,10 +587,11 @@ class PyraBot:
         # Signal handlers
         loop = asyncio.get_event_loop()
         loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(self._shutdown()))
-        loop.add_signal_handler(
-            signal.SIGHUP,
-            lambda: asyncio.create_task(self._reload_plugins()),
-        )
+        if hasattr(signal, 'SIGHUP'):
+            loop.add_signal_handler(
+                signal.SIGHUP,
+                lambda: asyncio.create_task(self._reload_plugins()),
+            )
 
         # Connect to IRC
         await self.irc.run()

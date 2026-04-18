@@ -19,6 +19,7 @@ async def channels_list(
     bot = request.app.state.bot
     channels = list(bot.channels.values())
     return templates.TemplateResponse(
+        request,
         "channels.html",
         {"request": request, "username": username, "channels": channels},
     )
@@ -53,6 +54,7 @@ async def channel_settings(
             settings[key] = await get_channel_setting(session, channel_name, key, "")
 
     return templates.TemplateResponse(
+        request,
         "channel_settings.html",
         {
             "request": request,

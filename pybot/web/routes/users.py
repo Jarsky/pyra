@@ -35,6 +35,7 @@ async def users_list(
         users = result.scalars().all()
 
     return templates.TemplateResponse(
+        request,
         "users.html",
         {
             "request": request,

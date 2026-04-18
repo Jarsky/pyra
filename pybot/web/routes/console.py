@@ -19,6 +19,7 @@ async def console_view(
     username: str = Depends(get_current_user),
 ) -> HTMLResponse:
     return templates.TemplateResponse(
+        request,
         "console.html",
         {"request": request, "username": username},
     )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -20,7 +22,7 @@ async def plugins_list(
     loader = bot.plugin_loader
 
     if not loader:
-        plugins = []
+        plugins: list[dict[str, Any]] = []
     else:
         from pybot.plugin import get_registry
 
@@ -42,6 +44,7 @@ async def plugins_list(
             )
 
     return templates.TemplateResponse(
+        request,
         "plugins.html",
         {"request": request, "username": username, "plugins": plugins},
     )

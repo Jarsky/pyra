@@ -33,7 +33,7 @@ def create_app(bot: "PyraBot") -> FastAPI:
     # Auth routes
     @app.get("/auth/login", response_class=HTMLResponse)
     async def login_page(request: Request) -> Response:
-        return templates.TemplateResponse("login.html", {"request": request, "error": None})
+        return templates.TemplateResponse(request, "login.html", {"request": request, "error": None})
 
     @app.post("/auth/login")
     async def login(
@@ -53,6 +53,7 @@ def create_app(bot: "PyraBot") -> FastAPI:
 
         if not user or not user.password_hash or not verify_password(password, user.password_hash):
             return templates.TemplateResponse(
+                request,
                 "login.html",
                 {"request": request, "error": "Invalid username or password."},
                 status_code=401,
@@ -65,6 +66,7 @@ def create_app(bot: "PyraBot") -> FastAPI:
             )
         if not is_admin:
             return templates.TemplateResponse(
+                request,
                 "login.html",
                 {"request": request, "error": "Insufficient permissions."},
                 status_code=403,

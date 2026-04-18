@@ -206,7 +206,7 @@ class PartylineSession:
             from passlib.context import CryptContext
 
             ctx = CryptContext(schemes=["bcrypt"])
-            return ctx.verify(password, user.password_hash)
+            return ctx.verify(password, user.password_hash)  # type: ignore[no-any-return]
         except Exception as exc:
             logger.error(f"Partyline auth error: {exc}")
             return False

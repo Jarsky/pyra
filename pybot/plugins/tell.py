@@ -85,7 +85,7 @@ async def _deliver_tells(bot: object, nick: str, channel: str) -> None:
             try:
                 from pybot.plugins.seen import _format_age as fmt_age
             except ImportError:
-                fmt_age = lambda s: f"{s}s"  # noqa: E731
+                fmt_age = lambda seconds: f"{seconds}s"  # noqa: E731
 
             age = fmt_age(int((now - tell.created_at.replace(tzinfo=timezone.utc)).total_seconds()))
             await bot.say(  # type: ignore[attr-defined]

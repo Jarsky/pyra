@@ -29,6 +29,7 @@ async def settings_view(
         raw_yaml = yaml.dump(bot.config.model_dump(mode="json"), default_flow_style=False)
 
     return templates.TemplateResponse(
+        request,
         "settings.html",
         {
             "request": request,
