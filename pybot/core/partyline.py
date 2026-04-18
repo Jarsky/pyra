@@ -358,18 +358,30 @@ async def execute_partyline_command(
 
     if cmd == "help":
         await send(
-            "Commands:" + line_ending
-            + "  .help" + line_ending
-            + "  .who" + line_ending
-            + "  .channels" + line_ending
-            + "  .say <#chan> <message>" + line_ending
-            + "  .join <#chan>" + line_ending
-            + "  .part <#chan>" + line_ending
-            + "  .reload               (reload config + all plugins)" + line_ending
-            + "  .restart              (owner only)" + line_ending
-            + "  .shutdown             (owner only)" + line_ending
-            + "  .raw <line>           (owner only)" + line_ending
-            + "  .quit" + line_ending
+            "Commands:"
+            + line_ending
+            + "  .help"
+            + line_ending
+            + "  .who"
+            + line_ending
+            + "  .channels"
+            + line_ending
+            + "  .say <#chan> <message>"
+            + line_ending
+            + "  .join <#chan>"
+            + line_ending
+            + "  .part <#chan>"
+            + line_ending
+            + "  .reload               (reload config + all plugins)"
+            + line_ending
+            + "  .restart              (owner only)"
+            + line_ending
+            + "  .shutdown             (owner only)"
+            + line_ending
+            + "  .raw <line>           (owner only)"
+            + line_ending
+            + "  .quit"
+            + line_ending
         )
         return
 
