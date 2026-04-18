@@ -20,6 +20,18 @@ In Web UI, extra plugins can also be edited directly from the plugin detail page
 - Edit Config Vars: saves to `plugins.vars.<plugin_name>` in `config.yaml`
 - Script Editor: edits the plugin file for `plugins_extra/` entries
 
+Admin auth note:
+
+- Additional admins need a user password hash for Web UI/partyline login.
+- Owner can add a user and auto-send credentials with `!adduser <nick!user@host> <flags>`.
+- Owner can also set one manually with `!setpass <nick> <password>`.
+- Admins can rotate their own with `!passwd <newpassword>`.
+
+CTCP/DCC compatibility:
+
+- Built-in `ctcp` plugin adds CTCP replies (`VERSION`, `PING`, `TIME`, `CLIENTINFO`, `SOURCE`).
+- DCC is policy-driven and denied by default with a helpful response.
+
 ---
 
 ## The `Trigger` Object

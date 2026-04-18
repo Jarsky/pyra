@@ -125,6 +125,13 @@ plugins:
     search:
       max_results: 3
 
+    # ctcp:
+    #   enabled: true
+    #   version_reply: "Pyra IRC Bot"
+    #   source_url: "https://github.com/Jarsky/pyra"
+    #   allow_dcc: false
+    #   dcc_reply: "DCC is disabled on this bot. Use partyline/web UI."
+
     # ── plugins_extra/ config (uncomment and fill to enable) ───────────────
     # Each entry below corresponds to a plugin in plugins_extra/.
     # See that plugin's file header for full documentation of every key.

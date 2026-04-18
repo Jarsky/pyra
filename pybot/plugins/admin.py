@@ -18,9 +18,14 @@ Commands:
   !adduser <nick> <flags>         Add a user with flags
   !deluser <nick>                 Remove a user
   !flags <nick> [+/-flags]        Show or modify user flags
+    !setpass <nick> <password>      Set Web UI/partyline password for a user (owner)
+    !passwd <newpassword>           Change your own Web UI/partyline password
 """
 
 from __future__ import annotations
+
+import secrets
+import string
 
 __plugin_meta__ = {
     "author": "Jarsky",
@@ -304,8 +309,11 @@ async def cmd_adduser(bot: object, trigger: Trigger) -> None:
     mask = trigger.args[0]
     flags_str = trigger.args[1]
 
-    from pybot.core.database import get_session
+    from sqlalchemy import select
+
+    from pybot.core.database import User, get_session
     from pybot.core.permissions import add_flag
+    from pybot.web.auth import hash_password
 
     nick = mask.split("!")[0] if "!" in mask else mask
 
@@ -317,7 +325,28 @@ async def cmd_adduser(bot: object, trigger: Trigger) -> None:
                 await bot.reply(trigger, str(e))  # type: ignore[attr-defined]
                 return
 
+        result = await session.execute(select(User).where(User.hostmask == mask))
+        user = result.scalars().first()
+        if user is None:
+            result = await session.execute(select(User).where(User.nick == nick))
+            user = result.scalars().first()
+
+        if user is None:
+            await bot.reply(  # type: ignore[attr-defined]
+                trigger,
+                f"Added user {nick}, but no user record was found for password setup.",
+            )
+            await bot.reply(  # type: ignore[attr-defined]
+                trigger,
+                f"Run !setpass {nick} <password> to set credentials manually.",
+            )
+            return
+
+        generated_password = _generate_password()
+        user.password_hash = hash_password(generated_password)
+
     await bot.reply(trigger, f"Added user {nick} with flags: {flags_str}")  # type: ignore[attr-defined]
+    await _send_new_user_credentials(bot, nick, generated_password, trigger)
 
 
 @plugin.command(
@@ -343,6 +372,76 @@ async def cmd_deluser(bot: object, trigger: Trigger) -> None:
             await bot.reply(trigger, f"Deleted user {nick}.")  # type: ignore[attr-defined]
         else:
             await bot.reply(trigger, f"User '{nick}' not found.")  # type: ignore[attr-defined]
+
+
+@plugin.command(
+    "setpass",
+    privilege="n",
+    help="Set a user's Web UI/partyline password",
+    usage="!setpass <nick> <password>",
+)
+async def cmd_setpass(bot: object, trigger: Trigger) -> None:
+    if len(trigger.args) < 2:
+        await bot.reply(trigger, "Usage: !setpass <nick> <password>")  # type: ignore[attr-defined]
+        return
+
+    nick = trigger.args[0]
+    password = " ".join(trigger.args[1:]).strip()
+    if len(password) < 8:
+        await bot.reply(trigger, "Password must be at least 8 characters.")  # type: ignore[attr-defined]
+        return
+
+    from sqlalchemy import select
+
+    from pybot.core.database import User, get_session
+    from pybot.web.auth import hash_password
+
+    async with get_session() as session:
+        result = await session.execute(select(User).where(User.nick == nick))
+        user = result.scalar_one_or_none()
+        if not user:
+            await bot.reply(trigger, f"User '{nick}' not found. Add them first with !adduser.")  # type: ignore[attr-defined]
+            return
+
+        user.password_hash = hash_password(password)
+
+    await bot.reply(trigger, f"Password updated for {nick}.")  # type: ignore[attr-defined]
+
+
+@plugin.command(
+    "passwd",
+    privilege="a",
+    help="Change your own Web UI/partyline password",
+    usage="!passwd <newpassword>",
+)
+async def cmd_passwd(bot: object, trigger: Trigger) -> None:
+    if not trigger.args:
+        await bot.reply(trigger, "Usage: !passwd <newpassword>")  # type: ignore[attr-defined]
+        return
+
+    password = " ".join(trigger.args).strip()
+    if len(password) < 8:
+        await bot.reply(trigger, "Password must be at least 8 characters.")  # type: ignore[attr-defined]
+        return
+
+    from sqlalchemy import select
+
+    from pybot.core.database import User, get_session
+    from pybot.web.auth import hash_password
+
+    async with get_session() as session:
+        result = await session.execute(select(User).where(User.nick == trigger.nick))
+        user = result.scalar_one_or_none()
+        if not user:
+            await bot.reply(  # type: ignore[attr-defined]
+                trigger,
+                "No user record found for your nick. Ask owner to run !setpass.",
+            )
+            return
+
+        user.password_hash = hash_password(password)
+
+    await bot.reply(trigger, "Your password has been updated.")  # type: ignore[attr-defined]
 
 
 @plugin.command(
@@ -433,3 +532,47 @@ def _parse_duration(s: str) -> datetime:
         except ValueError:
             pass
     raise ValueError(f"Invalid duration: {s!r}. Use e.g. 10m, 2h, 1d")
+
+
+def _generate_password(length: int = 14) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _web_login_url(bot: object) -> str:
+    web = bot.config.web  # type: ignore[attr-defined]
+    host = str(getattr(web, "host", "localhost") or "localhost")
+    port = int(getattr(web, "port", 8080) or 8080)
+    if host in {"0.0.0.0", "::", ""}:  # noqa: S104
+        host = "localhost"
+    return f"http://{host}:{port}/login"
+
+
+async def _send_new_user_credentials(
+    bot: object,
+    nick: str,
+    password: str,
+    trigger: Trigger,
+) -> None:
+    url = _web_login_url(bot)
+    try:
+        await bot.say(  # type: ignore[attr-defined]
+            nick,
+            "Your Pyra admin login is ready.",
+        )
+        await bot.say(nick, f"URL: {url}")  # type: ignore[attr-defined]
+        await bot.say(nick, f"Username: {nick}")  # type: ignore[attr-defined]
+        await bot.say(nick, f"Password: {password}")  # type: ignore[attr-defined]
+        await bot.say(  # type: ignore[attr-defined]
+            nick,
+            "Please run !passwd <newpassword> after first login.",
+        )
+        await bot.reply(  # type: ignore[attr-defined]
+            trigger,
+            f"Login credentials generated and sent privately to {nick}.",
+        )
+    except Exception as exc:
+        await bot.reply(  # type: ignore[attr-defined]
+            trigger,
+            f"User added, but failed to DM credentials to {nick}: {exc}",
+        )

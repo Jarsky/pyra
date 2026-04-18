@@ -20,7 +20,7 @@
 - **Full IRC/IRCv3 support** — TLS, SASL (PLAIN/EXTERNAL/SCRAM-SHA-256), CAP negotiation, flood protection
 - **Async throughout** — single asyncio event loop, no threads
 - **Plugin system** — decorator-based API, hot reload via SIGHUP/watchdog, plus Web UI upload and skeleton creation
-- **14 built-in plugins** — admin, adminchannel, antispam, calc, choose, dice, greet, help, karma, notes, search, seen, tell, uptime
+- **15 built-in plugins** — admin, adminchannel, antispam, calc, choose, ctcp, dice, greet, help, karma, notes, search, seen, tell, uptime
 - **Optional extras in plugins_extra/** — headlines, weather, url, arrnotify, invite, movies, lastfm, and more
 - **Eggdrop-style permissions** — `n/a/o/v/b/I/X` flags, per-channel overrides, hostmask wildcards
 - **Web admin UI** — FastAPI + Jinja2 + HTMX, no Node/React required
@@ -135,6 +135,10 @@ The web UI runs on port `8080` by default:
 
 - **Default login** — on first run, owner login is bootstrapped from config:
   `username = core.owner`, `password = partyline.password`
+- **Additional admin logins** — after adding an admin user/flags, set their login password from IRC:
+  `!adduser <nick!user@host> <flags>` (auto-generates and /msgs credentials),
+  `!setpass <nick> <password>` (owner override), or
+  `!passwd <newpassword>` (self-service for admins)
 
 - **Dashboard** — uptime, channels, and recent activity
 - **Channels** — settings and moderation controls
@@ -156,6 +160,9 @@ pybot-ctl console
 
 Login credentials are the same as web by default:
 `username = core.owner`, `password = partyline.password`.
+
+For non-owner admins, credentials are the same account/password stored in the user DB
+(`!setpass` / `!passwd` commands).
 
 Partyline provides a live admin console with bot controls, channel operations, and a real-time IRC event stream.
 
