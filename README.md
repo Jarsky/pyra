@@ -35,11 +35,12 @@
 
 ```bash
 git clone https://github.com/Jarsky/pyra.git
-cd docker
+cd pyra/docker
 
 # Copy and edit the config
-cp ../config/config.example.yaml data/config.yaml
-$EDITOR data/config.yaml
+mkdir -p ../data
+cp ../config/config.example.yaml ../data/config.yaml
+$EDITOR ../data/config.yaml
 
 # Start
 docker compose up -d
@@ -65,7 +66,12 @@ pybot --config config/config.yaml
 ### Production (PostgreSQL + Docker)
 
 ```bash
-cd docker
+cd pyra/docker
+
+# Ensure runtime config exists in ../data
+mkdir -p ../data
+cp -n ../config/config.example.yaml ../data/config.yaml
+$EDITOR ../data/config.yaml
 
 # Create your .env file with the DB password (gitignored)
 cp .env.example .env

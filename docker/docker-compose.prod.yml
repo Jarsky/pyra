@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   pyra:
     build:
@@ -11,8 +9,8 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - pyra_data:/data
-      - ./plugins_extra:/plugins_extra
+      - ../data:/data
+      - ../plugins_extra:/plugins_extra
     environment:
       - DATA_DIR=/data
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pyra}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyra}
@@ -41,7 +39,6 @@ services:
       - pyra_net
 
 volumes:
-  pyra_data:
   postgres_data:
 
 networks:

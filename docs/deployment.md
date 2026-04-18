@@ -6,21 +6,21 @@ Suitable for single-server setups, low to medium traffic.
 
 ```bash
 git clone https://github.com/Jarsky/pyra.git
-cd pyra_project/docker
+cd pyra/docker
 
 # Create data directory and config
-mkdir -p data
-cp ../config/config.example.yaml data/config.yaml
-$EDITOR data/config.yaml
+mkdir -p ../data
+cp ../config/config.example.yaml ../data/config.yaml
+$EDITOR ../data/config.yaml
 
 # Start
-docker-compose up -d
+docker compose up -d
 
 # Check logs
-docker-compose logs -f pyra
+docker compose logs -f pyra
 ```
 
-The SQLite database is stored in `docker/data/pyra.db`.
+The SQLite database is stored in `data/pyra.db`.
 
 ---
 
@@ -29,15 +29,20 @@ The SQLite database is stored in `docker/data/pyra.db`.
 Recommended for production deployments.
 
 ```bash
-cd pyra_project/docker
+cd pyra/docker
 
-mkdir -p data plugins_extra
+mkdir -p ../data ../plugins_extra
+
+# Ensure runtime config exists
+cp -n ../config/config.example.yaml ../data/config.yaml
+$EDITOR ../data/config.yaml
 
 # Set password
-export POSTGRES_PASSWORD=your_secure_password
+cp .env.example .env
+$EDITOR .env
 
 # Start with PostgreSQL
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 The `DATABASE_URL` is set automatically via docker-compose environment variables. Alembic migrations run automatically on container start via `entrypoint.sh`.
@@ -56,15 +61,16 @@ git clone https://github.com/Jarsky/pyra.git pyra
 cd pyra/docker
 
 # Copy and configure
-mkdir -p data plugins_extra
-cp ../config/config.example.yaml data/config.yaml
-nano data/config.yaml
+mkdir -p ../data ../plugins_extra
+cp -n ../config/config.example.yaml ../data/config.yaml
+nano ../data/config.yaml
 
 # Set DB password (prod)
-echo "POSTGRES_PASSWORD=changeme" > .env
+cp .env.example .env
+nano .env
 
 # Start
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### Updating
@@ -73,8 +79,8 @@ docker-compose -f docker-compose.prod.yml up -d
 cd /opt/pyra
 git pull
 cd docker
-docker-compose -f docker-compose.prod.yml pull
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ---
