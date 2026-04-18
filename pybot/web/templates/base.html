@@ -140,6 +140,9 @@
       margin-bottom: 1rem;
     }
     .flash-banner {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
       border: 1px solid var(--muted-border-color);
       border-left-width: 4px;
       border-radius: 0.75rem;
@@ -148,9 +151,20 @@
       box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
       backdrop-filter: blur(8px);
     }
+    .flash-icon {
+      flex-shrink: 0;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .flash-success .flash-icon { color: var(--pico-primary); }
+    .flash-error   .flash-icon { color: var(--danger-color); }
+    .flash-info    .flash-icon { color: var(--warn-color); }
     .flash-banner strong {
       display: inline-block;
-      margin-right: 0.45rem;
+      margin-right: 0.35rem;
     }
     .flash-success {
       border-left-color: var(--pico-primary);
@@ -192,13 +206,22 @@
   {% if flash_success or flash_error or flash_info %}
   <div class="flash-stack" aria-live="polite">
     {% if flash_success %}
-    <div class="flash-banner flash-success"><strong>Success</strong>{{ flash_success }}</div>
+    <div class="flash-banner flash-success">
+      <svg class="flash-icon" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M13.5 4.5l-7 7-3-3"/></svg>
+      <span><strong>Success</strong>{{ flash_success }}</span>
+    </div>
     {% endif %}
     {% if flash_error %}
-    <div class="flash-banner flash-error"><strong>Error</strong>{{ flash_error }}</div>
+    <div class="flash-banner flash-error">
+      <svg class="flash-icon" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>
+      <span><strong>Error</strong>{{ flash_error }}</span>
+    </div>
     {% endif %}
     {% if flash_info %}
-    <div class="flash-banner flash-info"><strong>Notice</strong>{{ flash_info }}</div>
+    <div class="flash-banner flash-info">
+      <svg class="flash-icon" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.5v3.5M8 5.5h.01"/></svg>
+      <span><strong>Notice</strong>{{ flash_info }}</span>
+    </div>
     {% endif %}
   </div>
   {% endif %}

@@ -77,8 +77,16 @@
         <option value="domain">Domain mask: *!*@*.domain.tld</option>
         <option value="exact">Exact hostmask: nick!user@host</option>
       </select>
-      <input type="text" name="ban_reason" placeholder="Ban reason (optional)" {% if not can_moderate %}disabled{% endif %}>
-      <button type="submit" {% if not can_moderate %}disabled{% endif %}>Ban Selected</button>
+      <input type="text" id="ban-reason-input" name="ban_reason" placeholder="Ban reason (optional)" {% if not can_moderate %}disabled{% endif %}>
+      <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.4rem;">
+        {% for reason in ['Spam', 'Flooding', 'Harassment', 'Advertising', 'Trolling', 'Ban evasion'] %}
+        <button type="button" class="outline secondary"
+          style="font-size:0.72rem;padding:0.2rem 0.55rem;"
+          {% if not can_moderate %}disabled{% endif %}
+          onclick="document.getElementById('ban-reason-input').value='{{ reason }}'">{{ reason }}</button>
+        {% endfor %}
+      </div>
+      <button type="submit" {% if not can_moderate %}disabled{% endif %} style="margin-top:0.6rem">Ban Selected</button>
     </form>
     {% else %}
     <p>No tracked users in this channel yet.</p>

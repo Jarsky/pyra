@@ -78,10 +78,21 @@ async def update_flags(
                 await remove_flag(
                     session, admin_user.hostmask, target_user.hostmask, flag, channel=ch
                 )
+            else:
+                return RedirectResponse(
+                    url=f"/users?error=Unknown+action:+{action}", status_code=303
+                )
         except PermissionError:
-            pass
+            return RedirectResponse(
+                url="/users?error=Permission+denied:+insufficient+flags+to+perform+this+action.",
+                status_code=303,
+            )
 
-    return RedirectResponse(url="/users?page=1", status_code=303)
+    verb = "added" if action == "add" else "removed"
+    return RedirectResponse(
+        url=f"/users?success=Flag+{flag}+{verb}+for+{target_user.nick}.",
+        status_code=303,
+    )
 
 
 @router.post("/{user_id}/delete")
@@ -97,7 +108,9 @@ async def delete_user(
     async with get_session() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
-        if user:
-            await session.delete(user)
+        if not user:
+            return RedirectResponse(url="/users?error=User+not+found.", status_code=303)
+        nick = user.nick
+        await session.delete(user)
 
-    return RedirectResponse(url="/users", status_code=303)
+    return RedirectResponse(url=f"/users?success=User+{nick}+deleted.", status_code=303)

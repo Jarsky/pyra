@@ -131,7 +131,7 @@ class WebConfig(BaseModel):
 class PluginsConfig(BaseModel):
     enabled: list[str] | Literal["all"] = "all"
     disabled: list[str] = Field(default_factory=list)
-    extra_dir: str = "plugins_extra/"
+    extra_dir: str = "/plugins_extra"
     vars: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 

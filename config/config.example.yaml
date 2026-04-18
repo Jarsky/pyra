@@ -112,7 +112,7 @@ web:
 plugins:
   enabled: "all"                 # "all" or list: ["seen", "tell", "help"]
   disabled: []                   # Plugins to skip even when enabled="all"
-  extra_dir: "plugins_extra/"    # Directory for third-party plugins
+  extra_dir: "/plugins_extra"    # Docker: /plugins_extra  |  bare-metal: use a relative or absolute path
 
   # Per-plugin variables — API keys, tokens, and settings.
   # Access in a plugin with: bot.plugin_config("plugin_name").get("key", "default")

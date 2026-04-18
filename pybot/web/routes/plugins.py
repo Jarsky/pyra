@@ -63,8 +63,15 @@ async def reload_plugin(
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.reload(plugin_name)
-        except Exception:  # noqa: S110
-            pass
+            return RedirectResponse(
+                url=f"/plugins?success={plugin_name}+reloaded+successfully.",
+                status_code=303,
+            )
+        except Exception as exc:
+            return RedirectResponse(
+                url=f"/plugins?error=Failed+to+reload+{plugin_name}:+{exc}",
+                status_code=303,
+            )
     return RedirectResponse(url="/plugins", status_code=303)
 
 
@@ -78,10 +85,21 @@ async def load_plugin(
     if bot.plugin_loader:
         try:
             available = bot.plugin_loader.get_available_plugins()
-            if plugin_name in available:
-                await bot.plugin_loader.load(plugin_name, available[plugin_name])
-        except Exception:  # noqa: S110
-            pass
+            if plugin_name not in available:
+                return RedirectResponse(
+                    url=f"/plugins?error=Plugin+{plugin_name}+not+found.",
+                    status_code=303,
+                )
+            await bot.plugin_loader.load(plugin_name, available[plugin_name])
+            return RedirectResponse(
+                url=f"/plugins?success={plugin_name}+loaded+successfully.",
+                status_code=303,
+            )
+        except Exception as exc:
+            return RedirectResponse(
+                url=f"/plugins?error=Failed+to+load+{plugin_name}:+{exc}",
+                status_code=303,
+            )
     return RedirectResponse(url="/plugins", status_code=303)
 
 
@@ -95,6 +113,13 @@ async def unload_plugin(
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.unload(plugin_name)
-        except Exception:  # noqa: S110
-            pass
+            return RedirectResponse(
+                url=f"/plugins?success={plugin_name}+unloaded.",
+                status_code=303,
+            )
+        except Exception as exc:
+            return RedirectResponse(
+                url=f"/plugins?error=Failed+to+unload+{plugin_name}:+{exc}",
+                status_code=303,
+            )
     return RedirectResponse(url="/plugins", status_code=303)
