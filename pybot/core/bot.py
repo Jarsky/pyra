@@ -224,10 +224,10 @@ class PyraBot:
         core = self.config.core
 
         # Fire all @plugin.event(cmd) handlers
-        for handler in registry.events.get(msg.command, []):
+        for event_handler in registry.events.get(msg.command, []):
             asyncio.create_task(
-                self._run_plugin_handler(handler.func, msg),
-                name=f"event-{handler.plugin_name}-{msg.command}",
+                self._run_plugin_handler(event_handler.func, msg),
+                name=f"event-{event_handler.plugin_name}-{msg.command}",
             )
 
         # PRIVMSG routing — commands and rules
@@ -246,19 +246,19 @@ class PyraBot:
                 cmd_name = parts[0].lower()
                 args = parts[1:]
 
-                for handler in registry.commands.get(cmd_name, []):  # type: ignore[assignment]
+                for command_handler in registry.commands.get(cmd_name, []):
                     trigger = await self._build_trigger(msg, args=args, match=None)
                     if trigger is None:
                         continue
                     # Check privilege
-                    if handler.privilege and not await self._check_privilege(  # type: ignore[attr-defined]
-                        trigger, handler.privilege  # type: ignore[attr-defined]
+                    if command_handler.privilege and not await self._check_privilege(
+                        trigger, command_handler.privilege
                     ):
                         await self.notice(trigger.nick, "Permission denied.")
                         continue
                     asyncio.create_task(
-                        self._run_plugin_handler(handler.func, msg, trigger=trigger),
-                        name=f"cmd-{handler.plugin_name}-{cmd_name}",
+                        self._run_plugin_handler(command_handler.func, msg, trigger=trigger),
+                        name=f"cmd-{command_handler.plugin_name}-{cmd_name}",
                     )
 
             # Rule matching
@@ -587,7 +587,7 @@ class PyraBot:
         # Signal handlers
         loop = asyncio.get_event_loop()
         loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(self._shutdown()))
-        if hasattr(signal, 'SIGHUP'):
+        if hasattr(signal, "SIGHUP"):
             loop.add_signal_handler(
                 signal.SIGHUP,
                 lambda: asyncio.create_task(self._reload_plugins()),

@@ -105,7 +105,7 @@ def _cmd_stop(args: argparse.Namespace) -> int:
     else:
         print(f"Process did not stop after {timeout}s, sending SIGKILL.")
         try:
-            os.kill(pid, getattr(signal, 'SIGKILL', signal.SIGTERM))
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         except ProcessLookupError:
             pass
 
@@ -138,7 +138,7 @@ def _cmd_reload(args: argparse.Namespace) -> int:
     if not pid or not _is_running(pid):
         print("Pyra is not running.")
         return 1
-    os.kill(pid, getattr(signal, 'SIGHUP', signal.SIGTERM))
+    os.kill(pid, getattr(signal, "SIGHUP", signal.SIGTERM))
     print(f"Sent SIGHUP to PID {pid} (plugin reload).")
     return 0
 

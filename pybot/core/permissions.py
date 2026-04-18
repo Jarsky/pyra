@@ -237,7 +237,12 @@ async def remove_flag(
     return removed
 
 
-async def add_owner_bootstrap(session: AsyncSession, nick: str, hostmask: str, password_hash: str) -> None:
+async def add_owner_bootstrap(
+    session: AsyncSession,
+    nick: str,
+    hostmask: str,
+    password_hash: str = "",
+) -> None:
     """Create the initial owner user with no permission check (setup only)."""
     from datetime import datetime, timezone
 

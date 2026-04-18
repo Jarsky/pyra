@@ -9,6 +9,7 @@ Hot-reload: file mtimes are polled every 5 seconds; SIGHUP triggers reload_all()
 from __future__ import annotations
 
 import asyncio
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -41,14 +42,23 @@ class PluginLoader:
         # Tell the registry which plugin is being loaded
         _set_current_plugin(name)
 
+        module_name = f"pybot.plugins._loaded.{name}"
+
         try:
-            spec = importlib.util.spec_from_file_location(f"pybot.plugins._loaded.{name}", path)
+            spec = importlib.util.spec_from_file_location(module_name, path)
             if spec is None or spec.loader is None:
                 raise ImportError(f"Cannot create spec for {path}")
 
             module = importlib.util.module_from_spec(spec)
-            # Register in sys.modules so relative imports work
-            sys.modules[f"pybot.plugins._loaded.{name}"] = module
+            # Register in sys.modules so relative imports work.
+            sys.modules[module_name] = module
+
+            # Invalidate import caches and drop stale bytecode to make rapid reloads reliable.
+            importlib.invalidate_caches()
+            pyc_path = Path(importlib.util.cache_from_source(str(path)))
+            if pyc_path.exists():
+                pyc_path.unlink()
+
             spec.loader.exec_module(module)  # type: ignore[union-attr]
 
             self._loaded[name] = module
@@ -64,7 +74,7 @@ class PluginLoader:
             logger.error(f"Failed to load plugin '{name}': {exc}")
             # Ensure registry is cleaned up on partial load
             get_registry().clear_plugin(name)
-            sys.modules.pop(f"pybot.plugins._loaded.{name}", None)
+            sys.modules.pop(module_name, None)
         finally:
             _set_current_plugin("unknown")
 

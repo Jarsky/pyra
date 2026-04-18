@@ -33,7 +33,9 @@ def create_app(bot: "PyraBot") -> FastAPI:
     # Auth routes
     @app.get("/auth/login", response_class=HTMLResponse)
     async def login_page(request: Request) -> Response:
-        return templates.TemplateResponse(request, "login.html", {"request": request, "error": None})
+        return templates.TemplateResponse(
+            request, "login.html", {"request": request, "error": None}
+        )
 
     @app.post("/auth/login")
     async def login(
