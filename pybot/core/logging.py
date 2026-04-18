@@ -45,16 +45,24 @@ def setup_logging(config: "BotConfig") -> None:
             else:
                 log_path = data_dir / log_path
 
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.add(
-            str(log_path),
-            level=level,
-            rotation="10 MB" if config.core.log_rotate else None,
-            retention="30 days" if config.core.log_rotate else None,
-            compression="gz" if config.core.log_rotate else None,
-            format=(
-                "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | " "{name}:{function}:{line} - {message}"
-            ),
-            encoding="utf-8",
-        )
+            logger.add(
+                str(log_path),
+                level=level,
+                rotation="10 MB" if config.core.log_rotate else None,
+                retention="30 days" if config.core.log_rotate else None,
+                compression="gz" if config.core.log_rotate else None,
+                format=(
+                    "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | "
+                    "{name}:{function}:{line} - {message}"
+                ),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning(
+                "File logging disabled: could not initialize log path '{}': {}",
+                log_path,
+                exc,
+            )
