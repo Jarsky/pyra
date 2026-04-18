@@ -19,7 +19,7 @@
 
 - **Full IRC/IRCv3 support** — TLS, SASL (PLAIN/EXTERNAL/SCRAM-SHA-256), CAP negotiation, flood protection
 - **Async throughout** — single asyncio event loop, no threads
-- **Plugin system** — decorator-based API, hot reload via SIGHUP or watchdog
+- **Plugin system** — decorator-based API, hot reload via SIGHUP/watchdog, plus Web UI upload and skeleton creation
 - **14 built-in plugins** — admin, adminchannel, antispam, calc, choose, dice, greet, help, karma, notes, search, seen, tell, uptime
 - **Optional extras in plugins_extra/** — headlines, weather, url, arrnotify, invite, movies, lastfm, and more
 - **Eggdrop-style permissions** — `n/a/o/v/b/I/X` flags, per-channel overrides, hostmask wildcards
@@ -139,7 +139,8 @@ The web UI runs on port `8080` by default:
 - **Dashboard** — uptime, channels, and recent activity
 - **Channels** — settings and moderation controls
 - **Users** — user management and flags
-- **Plugins / Logs / Console / Settings** — operational admin tools in one place
+- **Plugins** — load/unload/reload, upload new plugin files, create skeleton plugins, edit vars, and edit extra plugin scripts
+- **Logs / Console / Settings** — operational admin tools in one place
 
 ---
 

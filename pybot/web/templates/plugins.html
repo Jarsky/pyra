@@ -4,6 +4,13 @@
 <h2>Plugins ({{ plugins|selectattr('loaded')|list|length }} loaded / {{ plugins|length }} available)</h2>
 
 <style>
+  .plugin-tools { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1rem; margin-bottom:1rem; }
+  .plugin-tools form { margin:0; }
+  .plugin-tools label { font-size:0.78rem; color:var(--muted-color); margin-bottom:0.2rem; }
+  .plugin-tools input[type="text"],
+  .plugin-tools input[type="file"] { margin-bottom:0.5rem; }
+  .plugin-tools .row { display:flex; gap:0.6rem; align-items:center; margin-bottom:0.6rem; }
+  .plugin-tools .row label { margin:0; }
   .plugin-actions { display:flex; flex-wrap:wrap; gap:0.4rem; justify-content:flex-end; }
   .plugin-actions form { margin:0; }
   .plugin-actions button { padding:0.18rem 0.55rem; font-size:0.8rem; width:auto; min-width:0; }
@@ -13,6 +20,37 @@
   .plugin-commands details { margin:0; }
   .plugin-commands summary { cursor:pointer; color:var(--primary); }
 </style>
+
+{% if is_owner %}
+<div class="plugin-tools">
+  <article>
+    <header><strong>Upload Plugin</strong></header>
+    <form action="/plugins/upload" method="post" enctype="multipart/form-data">
+      <label for="plugin-file">Python file (.py)</label>
+      <input id="plugin-file" name="plugin_file" type="file" accept=".py" required>
+      <div class="row">
+        <label><input type="checkbox" name="load_now" value="true"> Load after upload</label>
+        <label><input type="checkbox" name="overwrite" value="true"> Overwrite existing</label>
+      </div>
+      <button type="submit" class="outline">Upload</button>
+    </form>
+  </article>
+
+  <article>
+    <header><strong>Create New Plugin</strong></header>
+    <form action="/plugins/new" method="post">
+      <label for="plugin-name">Plugin name</label>
+      <input id="plugin-name" name="plugin_name" type="text" pattern="[a-z_][a-z0-9_]*" placeholder="example_plugin" required>
+      <label for="plugin-desc">Description</label>
+      <input id="plugin-desc" name="description" type="text" placeholder="What this plugin does">
+      <div class="row">
+        <label><input type="checkbox" name="load_now" value="true"> Load after create</label>
+      </div>
+      <button type="submit" class="outline">Create Skeleton</button>
+    </form>
+  </article>
+</div>
+{% endif %}
 
 <table>
   <thead><tr><th>Name</th><th>Commands</th><th>Actions</th></tr></thead>

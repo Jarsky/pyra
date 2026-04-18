@@ -2,7 +2,8 @@
 
 ## Quick Start
 
-Create a `.py` file in `plugins_extra/` (or `pybot/plugins/` for built-ins):
+Create a `.py` file in `plugins_extra/` (or `pybot/plugins/` for built-ins).
+You can also do this from the Web UI Plugins page via Upload or Create Skeleton.
 
 ```python
 from pybot import plugin
@@ -12,7 +13,12 @@ async def ping(bot, trigger):
     await bot.reply(trigger, "Pong!")
 ```
 
-That's it — the file is loaded automatically on startup and on hot-reload.
+That's it - the file is loaded automatically on startup and on hot-reload.
+
+In Web UI, extra plugins can also be edited directly from the plugin detail page:
+
+- Edit Config Vars: saves to `plugins.vars.<plugin_name>` in `config.yaml`
+- Script Editor: edits the plugin file for `plugins_extra/` entries
 
 ---
 
@@ -292,12 +298,11 @@ The watchdog polls file mtimes every 5 seconds and auto-reloads changed plugins.
 1. `pybot/plugins/` — built-in plugins (always loaded unless disabled)
 2. `plugins_extra/` — user plugins (loaded in alphabetical order)
 
-To disable a built-in plugin, add it to `plugins.disabled` in `config.yaml`:
+To disable a plugin, add it to `plugins.disabled` in `config.yaml`:
 
 ```yaml
 plugins:
   disabled:
-    - weather
     - search
 ```
 

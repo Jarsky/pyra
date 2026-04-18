@@ -14,6 +14,8 @@
   .config-key { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:0.82rem; }
   .detail-actions { display:flex; flex-wrap:wrap; gap:0.5rem; }
   .detail-actions form { margin:0; }
+  .detail-actions button { padding:0.3rem 0.8rem; font-size:0.85rem; min-height:2.1rem; }
+  .editor-box { width:100%; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:0.82rem; }
 </style>
 
 <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap;">
@@ -29,20 +31,22 @@
   <span class="plugin-status unloaded" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Not found</span>
   {% endif %}
   <div class="detail-actions" style="margin-left:auto;">
-    <a href="/plugins" style="padding:0.3rem 0.8rem;font-size:0.85rem;" role="button" class="outline secondary">← Back</a>
+    <form action="/plugins" method="get">
+      <button type="submit" class="outline secondary">← Back</button>
+    </form>
     {% if loaded %}
     <form action="/plugins/{{ plugin_name }}/reload" method="post">
-      <button type="submit" class="outline" style="padding:0.3rem 0.8rem;font-size:0.85rem;">Reload</button>
+      <button type="submit" class="outline">Reload</button>
     </form>
     {% if plugin_name != 'admin' %}
     <form action="/plugins/{{ plugin_name }}/unload" method="post"
           onsubmit="return confirm('Unload {{ plugin_name }}?')">
-      <button type="submit" class="secondary outline" style="padding:0.3rem 0.8rem;font-size:0.85rem;">Unload</button>
+      <button type="submit" class="secondary outline">Unload</button>
     </form>
     {% endif %}
     {% elif available %}
     <form action="/plugins/{{ plugin_name }}/load" method="post">
-      <button type="submit" class="outline" style="padding:0.3rem 0.8rem;font-size:0.85rem;">Load</button>
+      <button type="submit" class="outline">Load</button>
     </form>
     {% endif %}
   </div>
@@ -121,6 +125,36 @@
   {% endif %}
 
 </div>
+
+{% if is_owner %}
+<div class="detail-grid" style="margin-top:0;">
+  <article>
+    <header><strong>Edit Config Vars</strong></header>
+    <form action="/plugins/{{ plugin_name }}/save-vars" method="post">
+      <p style="margin-top:0;color:var(--muted-color);font-size:0.85rem;">YAML object stored at plugins.vars.{{ plugin_name }} in config.</p>
+      <textarea class="editor-box" name="vars_yaml" rows="12">{{ vars_yaml }}</textarea>
+      <div style="display:flex;align-items:center;gap:0.7rem;margin-top:0.6rem;">
+        <label><input type="checkbox" name="reload_after" value="true"> Reload plugin after save</label>
+        <button type="submit" class="outline">Save Vars</button>
+      </div>
+    </form>
+  </article>
+
+  {% if script_editable %}
+  <article>
+    <header><strong>Script Editor</strong></header>
+    <form action="/plugins/{{ plugin_name }}/save-script" method="post">
+      <p style="margin-top:0;color:var(--muted-color);font-size:0.85rem;">Editing is enabled for extra plugins. Core plugins are read-only in Web UI.</p>
+      <textarea class="editor-box" name="script_content" rows="22">{{ script_content }}</textarea>
+      <div style="display:flex;align-items:center;gap:0.7rem;margin-top:0.6rem;">
+        <label><input type="checkbox" name="reload_after" value="true" checked> Reload plugin after save</label>
+        <button type="submit" class="outline">Save Script</button>
+      </div>
+    </form>
+  </article>
+  {% endif %}
+</div>
+{% endif %}
 
 {% if not loaded %}
 <article>
