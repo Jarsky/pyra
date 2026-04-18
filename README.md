@@ -33,11 +33,11 @@
 
 | Web UI | Partyline |
 |--------|-----------|
-| ![Web UI placeholder](https://placehold.co/1200x700/06100e/49dba2?text=Web+UI+Screenshot) | ![Partyline placeholder](https://placehold.co/1200x700/06100e/49dba2?text=Partyline+Screenshot) |
+| ![Web UI screenshot](./assets/screenshots/WebUI.png) | ![Partyline screenshot](./assets/screenshots/PartyLIne.png) |
 
 | Channels Admin | Console |
 |----------------|---------|
-| ![Channels placeholder](https://placehold.co/1200x700/06100e/49dba2?text=Channels+Admin+Screenshot) | ![Console placeholder](https://placehold.co/1200x700/06100e/49dba2?text=Web+Console+Screenshot) |
+| ![Channels Admin screenshot](./assets/screenshots/ChannelsAdmin.png) | ![Web Console screenshot](./assets/screenshots/WebConsole.png) |
 
 ---
 
