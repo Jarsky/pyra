@@ -102,6 +102,7 @@ def create_app(bot: "PyraBot") -> FastAPI:
     from pybot.web.routes.plugins import router as plugins_router
     from pybot.web.routes.settings import router as settings_router
     from pybot.web.routes.users import router as users_router
+    from pybot.web.routes.webhooks import router as webhooks_router
 
     app.include_router(dashboard_router)
     app.include_router(channels_router, prefix="/channels")
@@ -110,5 +111,6 @@ def create_app(bot: "PyraBot") -> FastAPI:
     app.include_router(logs_router, prefix="/logs")
     app.include_router(settings_router, prefix="/settings")
     app.include_router(console_router, prefix="/console")
+    app.include_router(webhooks_router)  # /webhooks/* — no auth, used by arr apps
 
     return app

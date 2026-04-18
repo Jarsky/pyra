@@ -1,4 +1,15 @@
-"""Seen plugin — track when nicks were last seen."""
+"""
+Seen plugin — track when nicks were last seen.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !seen <nick>    Show the last time a nick was seen and what they said
+
+Passive: records activity on PRIVMSG, JOIN, PART, and QUIT events.
+"""
 
 from __future__ import annotations
 

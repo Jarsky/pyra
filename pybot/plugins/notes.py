@@ -1,4 +1,16 @@
-"""Notes plugin — store admin notes about users."""
+"""
+Notes plugin — store admin notes about users (requires voice flag or higher).
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands (require 'v' flag):
+  !note add <text>    Add a note about the current context
+  !note list          List your notes
+  !note show <id>     Show full text of a note
+  !note del <id>      Delete a note by ID
+"""
 
 from __future__ import annotations
 

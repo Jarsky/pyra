@@ -1,8 +1,23 @@
 """
 Admin plugin — bot administration commands (owner/admin only).
 
-All commands require a or n flag. Most are designed to be used
-via /msg or from the partyline.
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+All commands require 'a' (admin) or 'n' (owner) flag.
+Most are designed to be used via /msg or from the partyline.
+
+Commands:
+  !join <#channel> [key]          Join a channel
+  !part [#channel] [reason]       Part a channel
+  !say <target> <message>         Make the bot say something
+  !raw <line>                     Send raw IRC line (owner only)
+  !reload [plugin]                Reload a plugin or all plugins
+  !quit [message]                 Disconnect and exit (owner only)
+  !adduser <nick> <flags>         Add a user with flags
+  !deluser <nick>                 Remove a user
+  !flags <nick> [+/-flags]        Show or modify user flags
 """
 
 from __future__ import annotations

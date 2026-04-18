@@ -1,4 +1,14 @@
-"""Choose plugin — random choice from a list, and Magic 8-Ball."""
+"""
+Choose plugin — random choice from a list, and Magic 8-Ball.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !choose <a>|<b>|<c>    Pick a random option from pipe-separated list
+  !8ball <question>       Ask the Magic 8-Ball a yes/no question
+"""
 
 from __future__ import annotations
 

@@ -117,23 +117,61 @@ plugins:
   # Per-plugin variables — API keys, tokens, and settings.
   # Access in a plugin with: bot.plugin_config("plugin_name").get("key", "default")
   # This section is gitignored via config/config.yaml — safe for secrets.
+  #
+  # For plugins_extra/ plugins, see the plugin file's docstring for its full
+  # configuration reference — each plugin documents its own vars block.
   vars:
+    # ── Built-in plugin config ─────────────────────────────────────────────
     weather:
       # Open-Meteo is free and needs no key. Uncomment if using a different provider:
       # api_key: ""
       units: metric                # metric | imperial
+
     search:
-      # DuckDuckGo and Wikipedia need no key. For custom/paid providers:
-      # google_api_key: ""
-      # google_cx: ""              # Google Custom Search engine ID
       max_results: 3
+
     url:
-      max_title_length: 200        # Truncate titles longer than this
+      max_title_length: 200
       ignore_domains: []           # e.g. ["localhost", "192.168."]
-    # Example third-party plugin:
-    # myplugin:
-    #   api_key: "your-secret-key-here"
-    #   endpoint: "https://api.example.com/v1"
+
+    # ── plugins_extra/ config (uncomment and fill to enable) ───────────────
+    # Each entry below corresponds to a plugin in plugins_extra/.
+    # See that plugin's file header for full documentation of every key.
+    #
+    # headlines:
+    #   feeds:
+    #     cnn: "http://rss.cnn.com/rss/edition_world.rss"
+    #   default_feed: "cnn"
+    #   cache_seconds: 3600
+    #   max_headlines: 5
+    #
+    # movies:
+    #   api_key: ""                # Free key at https://www.omdbapi.com
+    #
+    # lastfm:
+    #   api_key: ""                # Free key at https://www.last.fm/api
+    #
+    # translate:
+    #   endpoint: "https://libretranslate.com"
+    #   api_key: ""
+    #
+    # arrnotify:                   # See arrnotify.py for full event-toggle docs
+    #   announce_channels:
+    #     - "#media"
+    #   sonarr_secret: ""
+    #   radarr_secret: ""
+    #
+    # invite:                      # External MySQL credential-based invites
+    #   dsn: "mysql+aiomysql://user:pass@host:3306/dbname"
+    #   table: "users"
+    #   user_col: "username"
+    #   key_col: "irckey"
+    #   channel: "#mychan"
+    #
+    # selfauth:                    # Self-op/hop/owner list
+    #   authorized:
+    #     - "YourNick"
+    #   channel: "#mychan"
 
 # ─────────────────────────────────────────────────────────────
 # ANOPE SERVICES INTEGRATION (optional)

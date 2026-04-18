@@ -1,4 +1,13 @@
-"""Uptime plugin — show bot uptime and stats."""
+"""
+Uptime plugin — show bot uptime and stats.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !uptime    Show how long the bot has been running
+"""
 
 from __future__ import annotations
 

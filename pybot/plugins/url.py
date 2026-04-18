@@ -1,4 +1,11 @@
-"""URL plugin — auto-fetch page titles for URLs posted in chat.
+"""
+URL plugin — auto-fetch page titles for URLs posted in chat.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Passive: fires on any PRIVMSG containing an http/https URL.
 
 Plugin vars (config.yaml plugins.vars.url):
   max_title_length: int        (default: 200)

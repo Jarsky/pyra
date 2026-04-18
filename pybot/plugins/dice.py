@@ -1,4 +1,18 @@
-"""Dice plugin — NdM+K dice rolling."""
+"""
+Dice plugin — NdM+K dice rolling with modifiers and drop options.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !roll <NdM[+K]>              Roll N M-sided dice with optional modifier
+  !roll 2d6                    Roll 2d6
+  !roll 1d20+5                 Roll 1d20 and add 5
+  !roll 4d6 drop lowest        Roll 4d6 and drop lowest result
+
+Limits: max 100 dice, max 10000 sides per die.
+"""
 
 from __future__ import annotations
 

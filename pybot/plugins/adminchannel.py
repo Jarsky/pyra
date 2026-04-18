@@ -1,4 +1,21 @@
-"""Channel admin commands — op/deop/voice/kick/ban/topic etc."""
+"""
+Channel admin commands — op/deop/voice/kick/ban/topic etc.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands (all require op flag 'o' unless noted):
+  !op [nick]          Give channel op to nick (or yourself)
+  !deop [nick]        Remove channel op from nick
+  !voice [nick]       Give voice to nick
+  !devoice [nick]     Remove voice from nick
+  !kick <nick> [msg]  Kick nick from channel
+  !ban <mask>         Ban a hostmask
+  !unban <mask>       Remove a ban
+  !topic <text>       Set channel topic
+  !clear [n]          Remove last n messages (default 10)
+"""
 
 from __future__ import annotations
 

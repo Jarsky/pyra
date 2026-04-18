@@ -1,4 +1,13 @@
-"""Tell plugin — leave a message for a nick to receive when they next speak."""
+"""
+Tell plugin — leave a message for a nick to receive when they next speak.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !tell <nick> <message>    Leave a message delivered next time nick speaks
+"""
 
 from __future__ import annotations
 

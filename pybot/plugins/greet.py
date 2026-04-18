@@ -1,4 +1,14 @@
-"""Greet plugin — welcome new users on join with a configurable message."""
+"""
+Greet plugin — welcome new users on join with a configurable message.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Passive: fires on JOIN events — no commands.
+Configure the greeting via ChannelSetting key "greet_message".
+Supports {nick} and {channel} placeholders. 5-minute cooldown per nick.
+"""
 
 from __future__ import annotations
 

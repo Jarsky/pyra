@@ -269,6 +269,9 @@ class IRCConnection:
         else:
             await self.send(f"PART {channel}")
 
+    async def invite(self, nick: str, channel: str) -> None:
+        await self.send(f"INVITE {nick} {channel}")
+
     async def kick(self, channel: str, nick: str, reason: str = "") -> None:
         await self.send(f"KICK {channel} {nick} :{reason}")
 

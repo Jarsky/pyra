@@ -1,4 +1,15 @@
-"""Search plugin — DuckDuckGo instant answers, Wikipedia summaries.
+"""
+Search plugin — DuckDuckGo instant answers, Wikipedia summaries, and definitions.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !search <query>    DuckDuckGo instant answer
+  !ddg <query>       Alias for !search
+  !wiki <topic>      Wikipedia summary
+  !define <word>     Dictionary definition
 
 Plugin vars (config.yaml plugins.vars.search):
   max_results: int   (default: 3, controls summary length)

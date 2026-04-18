@@ -62,6 +62,29 @@ async def init_db(url: str, echo: bool = False) -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
+async def ensure_plugin_tables(*model_types: type) -> None:
+    """Create tables for plugin-defined models if they don't exist.
+
+    Plugins call this from their setup() to auto-create tables on first load.
+    Uses checkfirst=True so it is safe to call on every startup.
+
+    Example::
+
+        class MyTable(Base):
+            __tablename__ = "myplugin_data"
+            ...
+
+        async def setup(bot):
+            from pybot.core.database import ensure_plugin_tables
+            await ensure_plugin_tables(MyTable)
+    """
+    if _engine is None:
+        raise RuntimeError("Database not initialised — call init_db() first")
+    tables = [t.__table__ for t in model_types]
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=tables, checkfirst=True)
+
+
 async def close_db() -> None:
     global _engine
     if _engine:
@@ -319,9 +342,70 @@ class ScheduledTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
 
 
+class Poll(Base):
+    """A channel poll / vote."""
+
+    __tablename__ = "polls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    channel: Mapped[str] = mapped_column(String(128), index=True)
+    topic: Mapped[str] = mapped_column(Text)
+    answers: Mapped[str] = mapped_column(Text)  # JSON list of answer strings
+    starter_nick: Mapped[str] = mapped_column(String(64))
+    starter_hostmask: Mapped[str] = mapped_column(String(256))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    votes: Mapped[list["PollVote"]] = relationship(
+        "PollVote", back_populates="poll", cascade="all, delete-orphan"
+    )
+
+
+class PollVote(Base):
+    """A single vote cast in a Poll."""
+
+    __tablename__ = "poll_votes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    poll_id: Mapped[int] = mapped_column(Integer, ForeignKey("polls.id"), index=True)
+    hostmask: Mapped[str] = mapped_column(String(256))
+    answer: Mapped[str] = mapped_column(String(200))
+    voted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+    poll: Mapped["Poll"] = relationship("Poll", back_populates="votes")
+
+
+class Karma(Base):
+    """Karma score for an IRC nick."""
+
+    __tablename__ = "karma"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nick: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    given_up: Mapped[int] = mapped_column(Integer, default=0)
+    given_down: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+
 # ---------------------------------------------------------------------------
 # Convenience helpers
 # ---------------------------------------------------------------------------
+
+
+async def get_or_create_user_by_nick(
+    session: AsyncSession, nick: str, hostmask: str = ""
+) -> "User":
+    from sqlalchemy import select
+
+    result = await session.execute(select(User).where(User.nick == nick))
+    user = result.scalar_one_or_none()
+    if user is None:
+        user = User(nick=nick, hostmask=hostmask or f"{nick}!*@*")
+        session.add(user)
+        await session.flush()
+    return user
 
 
 async def get_or_create_channel(session: AsyncSession, name: str) -> Channel:

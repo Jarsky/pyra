@@ -1,4 +1,15 @@
-"""Help plugin — list commands and show usage information."""
+"""
+Help plugin — list commands and show usage information.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !help              List all available commands
+  !help <command>    Show detailed help for a specific command
+  !commands          Alias for !help
+"""
 
 from __future__ import annotations
 

@@ -1,9 +1,15 @@
 """
 Antispam + flood protection plugin.
 
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
 Tracks per-nick/channel message rates, CAPS ratio, and repeat detection.
 Action escalation: warn → kick → tempban.
 Users with the X (exempt) flag bypass all checks.
+
+Passive: no commands — fires on every PRIVMSG.
 """
 
 from __future__ import annotations

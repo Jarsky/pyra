@@ -137,6 +137,9 @@ class PyraBot:
     async def mode(self, target: str, modestring: str, *args: str) -> None:
         await self.irc.mode(target, modestring, *args)
 
+    async def invite(self, nick: str, channel: str) -> None:
+        await self.irc.invite(nick, channel)
+
     async def op(self, channel: str, nick: str) -> None:
         await self.irc.mode(channel, "+o", nick)
 

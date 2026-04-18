@@ -1,4 +1,14 @@
-"""Calc plugin — safe math expression evaluator."""
+"""
+Calc plugin — safe math expression evaluator.
+
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !calc <expr>    Evaluate a math expression (e.g. !calc 2+2, sin(pi/4))
+  !c <expr>       Alias for !calc
+"""
 
 from __future__ import annotations
 

@@ -2,6 +2,15 @@
 Weather plugin — current conditions and forecast via Open-Meteo (no API key needed).
 Geocoding via Nominatim/OpenStreetMap (also free, no key).
 
+Author:  Jarsky
+Version: 1.0.0
+Date:    2026-04-18
+
+Commands:
+  !weather [location]     Current conditions (uses saved location if none given)
+  !forecast [location]    3-day forecast
+  !w [location]           Alias for !weather
+
 Plugin vars (config.yaml plugins.vars.weather):
   units: metric | imperial  (default: metric)
 """
