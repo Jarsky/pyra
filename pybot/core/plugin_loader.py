@@ -25,6 +25,7 @@ class PluginLoader:
         self._bot = bot
         self._loaded: dict[str, ModuleType] = {}  # name -> module
         self._paths: dict[str, Path] = {}  # name -> file path
+        self._available_paths: dict[str, Path] = {}  # discovered plugins, loaded or not
         self._mtimes: dict[str, float] = {}  # name -> last mtime
         self._watch_task: asyncio.Task[None] | None = None
 
@@ -36,6 +37,8 @@ class PluginLoader:
         """Load a single plugin from a file path."""
         if name in self._loaded:
             await self.unload(name)
+
+        self._available_paths[name] = path
 
         logger.debug(f"Loading plugin: {name} from {path}")
 
@@ -107,10 +110,11 @@ class PluginLoader:
 
     async def reload(self, name: str) -> None:
         """Reload a plugin by name."""
-        if name not in self._paths:
+        if name not in self._paths and name not in self._available_paths:
             raise KeyError(f"Plugin '{name}' is not known (never loaded)")
-        path = self._paths[name]
-        await self.unload(name)
+        path = self._paths.get(name) or self._available_paths[name]
+        if name in self._loaded:
+            await self.unload(name)
         await self.load(name, path)
 
     async def reload_all(self) -> None:
@@ -132,6 +136,7 @@ class PluginLoader:
                 name = path.stem
                 if name.startswith("_"):
                     continue
+                self._available_paths[name] = path
                 if name in disabled:
                     logger.debug(f"Skipping disabled plugin: {name}")
                     continue
@@ -145,6 +150,9 @@ class PluginLoader:
 
     def get_loaded_plugins(self) -> dict[str, Path]:
         return dict(self._paths)
+
+    def get_available_plugins(self) -> dict[str, Path]:
+        return dict(self._available_paths)
 
     def is_loaded(self, name: str) -> bool:
         return name in self._loaded

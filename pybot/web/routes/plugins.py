@@ -28,18 +28,21 @@ async def plugins_list(
 
         registry = get_registry()
         plugins = []
-        for name, path in sorted(loader.get_loaded_plugins().items()):
-            cmds = [
-                cmd
-                for cmd, handlers in registry.commands.items()
-                if any(h.plugin_name == name for h in handlers)
-            ]
+        loaded = loader.get_loaded_plugins()
+        for name, path in sorted(loader.get_available_plugins().items()):
+            cmds = []
+            if name in loaded:
+                cmds = [
+                    cmd
+                    for cmd, handlers in registry.commands.items()
+                    if any(h.plugin_name == name for h in handlers)
+                ]
             plugins.append(
                 {
                     "name": name,
                     "path": str(path),
                     "commands": cmds,
-                    "loaded": True,
+                    "loaded": name in loaded,
                 }
             )
 
@@ -60,6 +63,23 @@ async def reload_plugin(
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.reload(plugin_name)
+        except Exception:  # noqa: S110
+            pass
+    return RedirectResponse(url="/plugins", status_code=303)
+
+
+@router.post("/{plugin_name}/load")
+async def load_plugin(
+    plugin_name: str,
+    request: Request,
+    username: str = Depends(get_current_user),
+) -> RedirectResponse:
+    bot = request.app.state.bot
+    if bot.plugin_loader:
+        try:
+            available = bot.plugin_loader.get_available_plugins()
+            if plugin_name in available:
+                await bot.plugin_loader.load(plugin_name, available[plugin_name])
         except Exception:  # noqa: S110
             pass
     return RedirectResponse(url="/plugins", status_code=303)

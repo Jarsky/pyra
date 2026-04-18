@@ -225,8 +225,39 @@ class PyraBot:
         if self.partyline:
             await self.partyline.on_irc_message(msg)
 
+        await self._persist_log_entry(msg)
+
         # Plugin dispatch (Phase 3+)
         await self._dispatch_to_plugins(msg)
+
+    async def _persist_log_entry(self, msg: IRCMessage) -> None:
+        """Persist selected IRC events for the web log viewer."""
+        event_type = msg.command.upper()
+        if event_type not in {"PRIVMSG", "JOIN", "PART", "QUIT", "KICK", "MODE", "TOPIC"}:
+            return
+
+        channel = msg.channel or (msg.params[0] if msg.params else "")
+        if event_type == "QUIT":
+            channel = ""
+
+        message = msg.text or None
+        hostmask = msg.hostmask or f"{msg.nick}!{msg.user}@{msg.host}"
+
+        try:
+            from pybot.core.database import Log, get_session
+
+            async with get_session() as session:
+                session.add(
+                    Log(
+                        channel=channel or "",
+                        nick=msg.nick,
+                        hostmask=hostmask,
+                        event_type=event_type,
+                        message=message,
+                    )
+                )
+        except Exception as exc:
+            logger.debug(f"Could not persist IRC log entry: {exc}")
 
     async def _dispatch_to_plugins(self, msg: IRCMessage) -> None:
         """Route message to plugin event handlers and command handlers."""

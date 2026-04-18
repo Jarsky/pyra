@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
@@ -39,6 +42,20 @@ async def logs_view(
         result = await session.execute(query)
         logs = result.scalars().all()
 
+    file_logs: list[str] = []
+    if not logs:
+        log_path = Path(request.app.state.bot.config.core.log_file)
+        if not log_path.is_absolute():
+            data_dir = Path(os.environ.get("DATA_DIR", "data"))
+            if log_path.parts and log_path.parts[0] == "data":
+                remainder = Path(*log_path.parts[1:]) if len(log_path.parts) > 1 else Path()
+                log_path = data_dir / remainder
+            else:
+                log_path = data_dir / log_path
+
+        if log_path.exists():
+            file_logs = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]
+
     return templates.TemplateResponse(
         request,
         "logs.html",
@@ -49,6 +66,7 @@ async def logs_view(
             "filter_channel": channel,
             "filter_nick": nick,
             "filter_event": event_type,
+            "file_logs": file_logs,
             "page": page,
         },
     )

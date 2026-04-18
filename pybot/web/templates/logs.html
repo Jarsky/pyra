@@ -20,14 +20,20 @@
 {% for log in logs %}
 <div class="log-line">
   [{{ log.logged_at.strftime('%Y-%m-%d %H:%M:%S') if log.logged_at else '?' }}]
-  [{{ log.channel }}]
+  [{{ log.channel or '—' }}]
   [{{ log.event_type }}]
   &lt;{{ log.nick }}&gt;
   {{ log.message or '' }}
 </div>
-{% else %}
-<div>No log entries found.</div>
 {% endfor %}
+
+{% if not logs and file_logs %}
+{% for line in file_logs %}
+<div class="log-line">{{ line }}</div>
+{% endfor %}
+{% elif not logs %}
+<div>No log entries found.</div>
+{% endif %}
 </div>
 
 <div style="display:flex;gap:1rem;margin-top:1rem">

@@ -11,7 +11,7 @@
     <td><code>{{ ch.name }}</code></td>
     <td>{{ ch.nicks|length }}</td>
     <td>{{ ch.topic[:60] if ch.topic else '—' }}</td>
-    <td><a href="/channels/{{ ch.name }}/settings" role="button" class="outline" style="padding:0.2rem 0.6rem">Settings</a></td>
+    <td><a href="/channels/{{ ch.name|replace('#', '%23') }}/settings" role="button" class="outline" style="padding:0.2rem 0.6rem">Settings</a></td>
   </tr>
   {% endfor %}
   </tbody>
