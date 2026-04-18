@@ -107,13 +107,7 @@ web:
   enabled: true
   host: "0.0.0.0"
   port: 8080
-  secret_key: "changeme"   # JWT signing key — use a random 32+ char string
-```
-
-Generate a secret key:
-
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
+  secret_key: ""   # Auto-generated and saved to config.yaml on first run — leave blank or set explicitly
 ```
 
 ---

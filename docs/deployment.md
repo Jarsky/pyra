@@ -8,13 +8,12 @@ Suitable for single-server setups, low to medium traffic.
 git clone https://github.com/Jarsky/pyra.git
 cd pyra/docker
 
-# Create data directory and config
-mkdir -p ../data
-cp ../config/config.example.yaml ../data/config.yaml
-$EDITOR ../data/config.yaml
-
-# Start
+# Start — config.yaml is created automatically from the example on first run
 docker compose up -d
+
+# Edit the generated config (server, nick, channels, etc.), then restart
+$EDITOR ../data/config.yaml
+docker compose restart pyra
 
 # Check logs
 docker compose logs -f pyra
@@ -31,18 +30,16 @@ Recommended for production deployments.
 ```bash
 cd pyra/docker
 
-mkdir -p ../data ../plugins_extra
-
-# Ensure runtime config exists
-cp -n ../config/config.example.yaml ../data/config.yaml
-$EDITOR ../data/config.yaml
-
-# Set password
+# Set the database password (only required secret)
 cp .env.example .env
 $EDITOR .env
 
-# Start with PostgreSQL
+# Start — config.yaml is created automatically from the example on first run
 docker compose -f docker-compose.prod.yml up -d
+
+# Edit the generated config (server, nick, channels, etc.), then restart
+$EDITOR ../data/config.yaml
+docker compose -f docker-compose.prod.yml restart pyra
 ```
 
 The `DATABASE_URL` is set automatically via docker-compose environment variables. Alembic migrations run automatically on container start via `entrypoint.sh`.
@@ -60,17 +57,16 @@ cd /opt
 git clone https://github.com/Jarsky/pyra.git pyra
 cd pyra/docker
 
-# Copy and configure
-mkdir -p ../data ../plugins_extra
-cp -n ../config/config.example.yaml ../data/config.yaml
-nano ../data/config.yaml
-
 # Set DB password (prod)
 cp .env.example .env
 nano .env
 
-# Start
+# Start — config.yaml is created automatically on first run
 docker compose -f docker-compose.prod.yml up -d
+
+# Edit the generated config (server, nick, channels, etc.), then restart
+nano ../data/config.yaml
+docker compose -f docker-compose.prod.yml restart pyra
 ```
 
 ### Updating

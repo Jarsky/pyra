@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir ".[postgres]"
 
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
+COPY config/config.example.yaml /app/config.example.yaml
 
 VOLUME ["/data", "/plugins_extra"]
 

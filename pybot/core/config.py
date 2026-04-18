@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import os
+import secrets
 from pathlib import Path
 from typing import Any, Literal
 
@@ -126,15 +127,6 @@ class WebConfig(BaseModel):
     debug: bool = False
     session_timeout: int = 28800
 
-    @model_validator(mode="after")
-    def validate_secret_key(self) -> "WebConfig":
-        if self.enabled and not self.secret_key.get_secret_value():
-            raise ValueError(
-                "web.secret_key must be set when web interface is enabled. "
-                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
-            )
-        return self
-
 
 class PluginsConfig(BaseModel):
     enabled: list[str] | Literal["all"] = "all"
@@ -193,6 +185,14 @@ def load_config(path: Path) -> BotConfig:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
         raise ConfigError(f"Failed to parse config YAML: {exc}") from exc
+
+    # Auto-generate secret_key on first run so the web interface works out of the box.
+    web_cfg = raw.get("web") or {}
+    if web_cfg.get("enabled", True) and not web_cfg.get("secret_key", ""):
+        if "web" not in raw:
+            raw["web"] = {}
+        raw["web"]["secret_key"] = secrets.token_hex(32)
+        path.write_text(yaml.dump(raw, default_flow_style=False), encoding="utf-8")
 
     try:
         config = BotConfig.model_validate(raw)

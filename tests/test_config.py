@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
 import yaml
 
 from pybot.core.config import BotConfig, ConfigError, load_config
+from tests.conftest import MINIMAL_CONFIG
 
 
 def test_load_minimal_config(minimal_config_file: Path) -> None:
@@ -92,10 +94,26 @@ def test_web_disabled_no_secret_ok(minimal_config_dict: dict) -> None:
     assert not config.web.enabled
 
 
-def test_web_enabled_requires_secret(minimal_config_dict: dict) -> None:
+def test_web_enabled_with_empty_secret_key_is_valid(minimal_config_dict: dict) -> None:
+    """Empty secret_key is accepted at model level; auto-generation happens in load_config."""
     minimal_config_dict["web"] = {"enabled": True, "secret_key": ""}
-    with pytest.raises(Exception, match="secret_key"):
-        BotConfig.model_validate(minimal_config_dict)
+    config = BotConfig.model_validate(minimal_config_dict)
+    assert config.web.enabled
+
+
+def test_web_secret_key_auto_generated(tmp_path: Path) -> None:
+    """load_config auto-generates and persists secret_key when web is enabled and key is empty."""
+    cfg = copy.deepcopy(MINIMAL_CONFIG)
+    cfg["web"] = {"enabled": True, "secret_key": ""}
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(cfg))
+
+    config = load_config(config_path)
+
+    generated = config.web.secret_key.get_secret_value()
+    assert generated  # non-empty key was generated
+    saved = yaml.safe_load(config_path.read_text())
+    assert saved["web"]["secret_key"] == generated  # persisted to file
 
 
 def test_command_prefix_validation(minimal_config_dict: dict) -> None:

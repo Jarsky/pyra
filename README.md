@@ -37,13 +37,12 @@
 git clone https://github.com/Jarsky/pyra.git
 cd pyra/docker
 
-# Copy and edit the config
-mkdir -p ../data
-cp ../config/config.example.yaml ../data/config.yaml
-$EDITOR ../data/config.yaml
-
-# Start
+# Start — config.yaml is created automatically on first run
 docker compose up -d
+
+# Edit the generated config, then restart
+$EDITOR ../data/config.yaml
+docker compose restart pyra
 ```
 
 ### Native install
@@ -68,16 +67,16 @@ pybot --config config/config.yaml
 ```bash
 cd pyra/docker
 
-# Ensure runtime config exists in ../data
-mkdir -p ../data
-cp -n ../config/config.example.yaml ../data/config.yaml
-$EDITOR ../data/config.yaml
-
-# Create your .env file with the DB password (gitignored)
+# Set the database password (only required secret)
 cp .env.example .env
 $EDITOR .env   # set POSTGRES_PASSWORD
 
+# Start — config.yaml is created automatically on first run
 docker compose -f docker-compose.prod.yml up -d
+
+# Edit the generated config (server, nick, channels, etc.), then restart
+$EDITOR ../data/config.yaml
+docker compose -f docker-compose.prod.yml restart pyra
 ```
 
 ---
