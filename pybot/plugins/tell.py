@@ -11,6 +11,14 @@ Commands:
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Leave messages for users, delivered when they next speak in channel.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 from datetime import datetime, timezone
 
 from pybot import plugin

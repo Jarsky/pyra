@@ -154,6 +154,9 @@ class PluginLoader:
     def get_available_plugins(self) -> dict[str, Path]:
         return dict(self._available_paths)
 
+    def get_module(self, name: str) -> "ModuleType | None":
+        return self._loaded.get(name)
+
     def is_loaded(self, name: str) -> bool:
         return name in self._loaded
 

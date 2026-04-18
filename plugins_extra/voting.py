@@ -17,6 +17,14 @@ Duration format: 5m, 2h, 1h30m
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "2.0.0",
+    "updated": "2026-04-18",
+    "description": "DB-backed channel polls with options, duration, and early-end support.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 import asyncio
 import json
 import re

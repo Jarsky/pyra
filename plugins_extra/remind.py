@@ -17,6 +17,14 @@ Duration: 5m, 2h, 1h30m, 2d, 30s
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Timed reminders in channel or PM. Supports 5m, 2h, 1h30m, 2d formats.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 import re
 from datetime import datetime, timedelta, timezone
 

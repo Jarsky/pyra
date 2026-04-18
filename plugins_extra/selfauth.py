@@ -31,6 +31,14 @@ Plugin vars (config.yaml plugins.vars.selfauth):
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "2.0.0",
+    "updated": "2026-04-18",
+    "description": "DB-backed self-op/hop/owner lists per channel. Users self-grant IRC modes.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 from sqlalchemy import String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 

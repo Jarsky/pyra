@@ -16,6 +16,14 @@ Limits: max 100 dice, max 10000 sides per die.
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Dice roller with NdM+K notation and optional drop-lowest for tabletop gaming.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 import random
 import re
 

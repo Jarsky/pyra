@@ -15,6 +15,14 @@ Commands:
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "TV show info and last/next episode details via TVMaze API. No API key needed.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 

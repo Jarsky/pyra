@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Plugin: {{ plugin_name }}{% endblock %}
+{% block content %}
+
+<style>
+  .detail-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; align-items:start; margin-bottom:1rem; }
+  .meta-row { display:flex; gap:0.5rem; margin-bottom:0.4rem; font-size:0.9rem; }
+  .meta-label { color:var(--muted-color); min-width:5rem; flex-shrink:0; }
+  .handler-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+  .handler-table th { text-align:left; padding:0.35rem 0.5rem; border-bottom:1px solid var(--muted-border-color); color:var(--muted-color); font-weight:600; }
+  .handler-table td { padding:0.35rem 0.5rem; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:top; }
+  .badge-priv { font-size:0.72rem; padding:0.1rem 0.4rem; border-radius:999px; background:rgba(73,219,162,0.15); color:var(--pico-primary); border:1px solid var(--pico-primary); }
+  .badge-event { font-size:0.72rem; padding:0.1rem 0.4rem; border-radius:999px; background:rgba(255,193,7,0.12); color:var(--warn-color); border:1px solid var(--warn-color); }
+  .config-key { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:0.82rem; }
+  .detail-actions { display:flex; flex-wrap:wrap; gap:0.5rem; }
+  .detail-actions form { margin:0; }
+</style>
+
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap;">
+  <h2 style="margin:0;">{{ plugin_name }}</h2>
+  {% if available %}
+  <span class="plugin-status {{ 'loaded' if loaded else 'unloaded' }}" style="font-size:0.8rem;padding:0.2rem 0.6rem;">
+    {{ 'Loaded' if loaded else 'Unloaded' }}
+  </span>
+  {% else %}
+  <span class="plugin-status unloaded" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Not found</span>
+  {% endif %}
+  <div class="detail-actions" style="margin-left:auto;">
+    <a href="/plugins" style="padding:0.3rem 0.8rem;font-size:0.85rem;" role="button" class="outline secondary">← Back</a>
+    {% if loaded %}
+    <form action="/plugins/{{ plugin_name }}/reload" method="post">
+      <button type="submit" class="outline" style="padding:0.3rem 0.8rem;font-size:0.85rem;">Reload</button>
+    </form>
+    {% if plugin_name != 'admin' %}
+    <form action="/plugins/{{ plugin_name }}/unload" method="post"
+          onsubmit="return confirm('Unload {{ plugin_name }}?')">
+      <button type="submit" class="secondary outline" style="padding:0.3rem 0.8rem;font-size:0.85rem;">Unload</button>
+    </form>
+    {% endif %}
+    {% elif available %}
+    <form action="/plugins/{{ plugin_name }}/load" method="post">
+      <button type="submit" class="outline" style="padding:0.3rem 0.8rem;font-size:0.85rem;">Load</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if not available %}
+<article>
+  <p>Plugin <strong>{{ plugin_name }}</strong> was not found in any configured plugin directory.</p>
+</article>
+{% else %}
+
+<div class="detail-grid">
+
+  {# ── Metadata card ─────────────────────────────────── #}
+  <article>
+    <header><strong>Details</strong></header>
+    {% if meta.description %}
+    <p style="margin-bottom:0.8rem;color:var(--muted-color);font-size:0.9rem;">{{ meta.description }}</p>
+    {% endif %}
+    <div class="meta-row"><span class="meta-label">Author</span><span>{{ meta.author or '—' }}</span></div>
+    <div class="meta-row"><span class="meta-label">Version</span><code>{{ meta.version or '—' }}</code></div>
+    <div class="meta-row"><span class="meta-label">Updated</span><span>{{ meta.updated or '—' }}</span></div>
+    {% if meta.url %}
+    <div class="meta-row"><span class="meta-label">Project</span>
+      <a href="{{ meta.url }}" target="_blank" rel="noopener noreferrer">{{ meta.url }}</a>
+    </div>
+    {% endif %}
+  </article>
+
+  {# ── Config vars card (only when vars are configured) ─ #}
+  {% if config_vars %}
+  <article>
+    <header><strong>Configured Vars</strong></header>
+    <table class="handler-table">
+      <thead><tr><th>Key</th><th>Value</th></tr></thead>
+      <tbody>
+        {% for k, v in config_vars.items() %}
+        <tr>
+          <td><code class="config-key">{{ k }}</code></td>
+          <td style="color:var(--muted-color);">{{ v if v else '<em>empty</em>' | safe }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  {% endif %}
+
+</div>
+
+{% if not loaded %}
+<article>
+  <p style="color:var(--muted-color);">Plugin is not currently loaded — load it to inspect registered handlers.</p>
+</article>
+{% else %}
+
+{# ── Commands ────────────────────────────────────────── #}
+{% if commands %}
+<article>
+  <header><strong>Commands</strong></header>
+  <table class="handler-table">
+    <thead>
+      <tr>
+        <th>Command</th>
+        <th>Aliases</th>
+        <th>Privilege</th>
+        <th>Usage</th>
+        <th>Help</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cmd in commands %}
+      <tr>
+        <td><code>!{{ cmd.command }}</code></td>
+        <td>
+          {% for alias in cmd.aliases %}
+          <code>!{{ alias }}</code>
+          {% endfor %}
+          {% if not cmd.aliases %}—{% endif %}
+        </td>
+        <td>
+          {% if cmd.privilege %}
+          <span class="badge-priv">{{ cmd.privilege }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td><small>{{ cmd.usage or '—' }}</small></td>
+        <td><small>{{ cmd.help or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endif %}
+
+{# ── Events / Intervals / Rules ───────────────────────── #}
+{% if events or intervals or rules %}
+<div class="detail-grid" style="margin-top:0;">
+
+  {% if events %}
+  <article>
+    <header><strong>IRC Events</strong></header>
+    <table class="handler-table">
+      <thead><tr><th>Event</th><th>Handler</th><th>Priority</th></tr></thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td><span class="badge-event">{{ e.event }}</span></td>
+          <td><code>{{ e.func }}</code></td>
+          <td>{{ e.priority }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  {% endif %}
+
+  {% if intervals %}
+  <article>
+    <header><strong>Scheduled Intervals</strong></header>
+    <table class="handler-table">
+      <thead><tr><th>Every</th><th>Handler</th></tr></thead>
+      <tbody>
+        {% for iv in intervals %}
+        <tr>
+          <td>{{ iv.seconds }}s</td>
+          <td><code>{{ iv.func }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  {% endif %}
+
+  {% if rules %}
+  <article>
+    <header><strong>Pattern Rules</strong></header>
+    <table class="handler-table">
+      <thead><tr><th>Pattern</th><th>Handler</th></tr></thead>
+      <tbody>
+        {% for rule in rules %}
+        <tr>
+          <td><code style="word-break:break-all;font-size:0.75rem;">{{ rule.pattern }}</code></td>
+          <td><code>{{ rule.func }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  {% endif %}
+
+</div>
+{% endif %}
+
+{% endif %}{# end if loaded #}
+{% endif %}{# end if available #}
+
+{% endblock %}

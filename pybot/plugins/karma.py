@@ -20,6 +20,14 @@ Rules:
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Track nick++ / nick-- karma scores with top and bottom leaderboards.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 import re
 
 from pybot import plugin

@@ -20,7 +20,10 @@
   {% for p in plugins %}
   <tr>
     <td>
-      <strong>{{ p.name }}</strong>
+      <a href="/plugins/{{ p.name }}" style="text-decoration:none;color:inherit;"><strong>{{ p.name }}</strong></a>
+      {% if p.meta.description %}
+      <div style="margin-top:0.2rem;font-size:0.78rem;color:var(--muted-color);">{{ p.meta.description }}</div>
+      {% endif %}
       <div style="margin-top:0.35rem"><span class="plugin-status {{ 'loaded' if p.loaded else 'unloaded' }}">{{ 'Loaded' if p.loaded else 'Unloaded' }}</span></div>
     </td>
     <td class="plugin-commands">

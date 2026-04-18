@@ -13,6 +13,14 @@ Commands:
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "List all available commands and show per-command usage information.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 from pybot import plugin
 from pybot.plugin import Trigger
 

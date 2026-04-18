@@ -22,6 +22,14 @@ Commands:
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Bot admin commands (join, part, say, reload, quit). Owner/admin only.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 from datetime import datetime
 
 from pybot import plugin

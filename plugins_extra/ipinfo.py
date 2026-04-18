@@ -15,6 +15,14 @@ Commands:
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "IP address geolocation and ISP lookup via ip-api.com. No API key required.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 import ipaddress
 
 import httpx

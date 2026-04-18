@@ -24,6 +24,14 @@ Plugin vars (config.yaml plugins.vars.headlines):
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "News headlines from configurable RSS feeds (CNN, RNZ, Guardian, etc.).",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 

@@ -19,6 +19,14 @@ Commands (all require op flag 'o' unless noted):
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Channel mod commands (op, deop, kick, ban, topic, clear). Needs op flag.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 from pybot import plugin
 from pybot.plugin import Trigger
 

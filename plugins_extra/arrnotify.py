@@ -68,6 +68,14 @@ Webhook URLs to configure in each app:
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Receive *arr webhooks (Sonarr, Radarr, Plex, Overseerr) and announce to IRC.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 _BOT_REF: object = None
 
 

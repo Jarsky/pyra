@@ -27,6 +27,14 @@ The DSN uses SQLAlchemy async format so no raw MySQL driver code is needed.
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "2.0.0",
+    "updated": "2026-04-18",
+    "description": "Channel invite validated against an external MySQL database.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 from pybot import plugin
 from pybot.plugin import Trigger
 

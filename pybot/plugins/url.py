@@ -14,6 +14,14 @@ Plugin vars (config.yaml plugins.vars.url):
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Passively fetches and displays page titles for HTTP/S URLs posted in chat.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 import re
 from collections import defaultdict
 from urllib.parse import urlparse

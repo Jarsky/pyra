@@ -12,6 +12,14 @@ Commands:
 
 from __future__ import annotations
 
+__plugin_meta__ = {
+    "author": "Jarsky",
+    "version": "1.0.0",
+    "updated": "2026-04-18",
+    "description": "Random choice from a pipe-separated list and Magic 8-Ball responses.",
+    "url": "https://github.com/Jarsky/pyra",
+}
+
 import random
 
 from pybot import plugin
