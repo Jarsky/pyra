@@ -19,6 +19,20 @@ if TYPE_CHECKING:
 MAX_LOGIN_ATTEMPTS = 3
 SESSION_TIMEOUT = 1800  # 30 minutes idle
 
+_PARTYLINE_BANNER = (
+    "\r\n"
+    "\033[1;32m"
+    "  ██████╗ ██╗   ██╗██████╗  █████╗ \r\n"
+    "  ██╔══██╗╚██╗ ██╔╝██╔══██╗██╔══██╗\r\n"
+    "  ██████╔╝ ╚████╔╝ ██████╔╝███████║\r\n"
+    "  ██╔═══╝   ╚██╔╝  ██╔══██╗██╔══██║\r\n"
+    "  ██║        ██║   ██║  ██║██║  ██║\r\n"
+    "  ╚═╝        ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝\r\n"
+    "\033[0m"
+    "\033[1;32m  Pyra IRC Bot Partyline\r\n"
+    "  ─────────────────────────────────\033[0m\r\n\r\n"
+)
+
 
 class PartylineServer:
     def __init__(self, bot: "PyraBot") -> None:
@@ -151,7 +165,7 @@ class PartylineSession:
     # ------------------------------------------------------------------
 
     async def _authenticate(self) -> bool:
-        await self.send(f"\r\nPyra IRC Bot Partyline\r\n" f"{'─' * 40}\r\n\r\n" "Login: ")
+        await self.send(_PARTYLINE_BANNER + "Login: ")
         attempts = 0
         while attempts < MAX_LOGIN_ATTEMPTS:
             try:
@@ -194,6 +208,12 @@ class PartylineSession:
         from sqlalchemy import select
 
         from pybot.core.database import User, get_session
+        from pybot.web.auth import verify_password
+
+        owner_nick = self._bot.config.core.owner.strip()
+        owner_password = self._bot.config.partyline.password.get_secret_value().strip()
+        if username == owner_nick and owner_password and password == owner_password:
+            return True
 
         try:
             async with get_session() as session:
@@ -203,10 +223,7 @@ class PartylineSession:
             if not user or not user.password_hash:
                 return False
 
-            from passlib.context import CryptContext
-
-            ctx = CryptContext(schemes=["bcrypt"])
-            return ctx.verify(password, user.password_hash)  # type: ignore[no-any-return]
+            return verify_password(password, user.password_hash)
         except Exception as exc:
             logger.error(f"Partyline auth error: {exc}")
             return False

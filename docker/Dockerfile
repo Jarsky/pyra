@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends netcat-openbsd \
+	&& apt-get install -y --no-install-recommends inetutils-telnet netcat-openbsd \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 pyra
