@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Console{% endblock %}
+{% block content %}
+<h2>Console</h2>
+
+<div id="console-output"
+     style="background:#0d1117;color:#c9d1d9;font-family:monospace;font-size:0.85rem;
+            height:500px;overflow-y:auto;padding:1rem;border-radius:4px;margin-bottom:1rem"
+     hx-ext="ws"
+     ws-connect="/console/ws">
+  <div id="console-lines">
+    <span style="color:#8b949e">— Connected to Pyra console —</span>
+  </div>
+</div>
+
+<form id="console-form"
+      hx-ext="ws"
+      ws-connect="/console/ws"
+      hx-on:submit="scrollConsole()">
+  <div style="display:flex;gap:0.5rem">
+    <input type="text" id="console-input" name="command"
+           placeholder="Enter command (e.g. !say #channel hello)"
+           autocomplete="off" autocorrect="off" spellcheck="false"
+           style="font-family:monospace">
+    <button type="submit">Send</button>
+  </div>
+  <small style="color:var(--pico-muted-color)">
+    Commands: <code>!say #chan msg</code> &nbsp;
+    <code>!join #chan</code> &nbsp;
+    <code>!part #chan</code> &nbsp;
+    <code>!reload plugin</code> &nbsp;
+    <code>who</code> &nbsp;
+    <code>channels</code>
+  </small>
+</form>
+
+<script>
+function scrollConsole() {
+  const el = document.getElementById('console-output');
+  el.scrollTop = el.scrollHeight;
+}
+
+// Auto-scroll on new content
+const observer = new MutationObserver(scrollConsole);
+observer.observe(document.getElementById('console-lines'), {childList: true, subtree: true});
+
+// Clear input after send
+document.getElementById('console-form').addEventListener('submit', function() {
+  setTimeout(() => { document.getElementById('console-input').value = ''; }, 50);
+});
+
+// Focus input on load
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('console-input').focus();
+});
+</script>
+{% endblock %}

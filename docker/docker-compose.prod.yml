@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  pyra:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: pyra
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - pyra_data:/data
+      - ./plugins_extra:/plugins_extra
+    environment:
+      - DATA_DIR=/data
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pyra}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyra}
+    ports:
+      - "8080:8080"
+      - "127.0.0.1:3333:3333"
+    networks:
+      - pyra_net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: pyra_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-pyra}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_DB=${POSTGRES_DB:-pyra}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pyra}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pyra_net
+
+volumes:
+  pyra_data:
+  postgres_data:
+
+networks:
+  pyra_net:
+    driver: bridge
