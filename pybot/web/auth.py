@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, cast
 
+import bcrypt
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 if TYPE_CHECKING:
     from pybot.core.bot import PyraBot
 
-_crypt_ctx = CryptContext(schemes=["bcrypt"])
 ALGORITHM = "HS256"
+_PW_SCHEME_PREFIX = "pyra_sha256_bcrypt$"
 
 
 def create_access_token(secret_key: str, username: str, expires_delta: timedelta) -> str:
@@ -23,11 +24,23 @@ def create_access_token(secret_key: str, username: str, expires_delta: timedelta
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return cast(bool, _crypt_ctx.verify(plain, hashed))
+    try:
+        if hashed.startswith(_PW_SCHEME_PREFIX):
+            stored_hash = hashed[len(_PW_SCHEME_PREFIX) :].encode("utf-8")
+            digest = hashlib.sha256(plain.encode("utf-8")).hexdigest().encode("utf-8")
+            return cast(bool, bcrypt.checkpw(digest, stored_hash))
+
+        # Backward compatibility for existing plain bcrypt hashes.
+        return cast(bool, bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8")))
+    except ValueError:
+        # Raised when checking long passwords against legacy bcrypt hashes.
+        return False
 
 
 def hash_password(password: str) -> str:
-    return cast(str, _crypt_ctx.hash(password))
+    digest = hashlib.sha256(password.encode("utf-8")).hexdigest().encode("utf-8")
+    hashed = bcrypt.hashpw(digest, bcrypt.gensalt()).decode("utf-8")
+    return f"{_PW_SCHEME_PREFIX}{hashed}"
 
 
 def decode_token(token: str, secret_key: str) -> str | None:
