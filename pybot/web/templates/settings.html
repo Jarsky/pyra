@@ -9,14 +9,6 @@
 </article>
 {% endif %}
 
-{% if saved %}
-<article>Settings saved successfully.</article>
-{% endif %}
-
-{% if error %}
-<article class="secondary">Error: {{ error }}</article>
-{% endif %}
-
 <form method="post" action="/settings">
   <label>
     Configuration (YAML)

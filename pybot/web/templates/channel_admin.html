@@ -66,8 +66,16 @@
       <label for="selected-users-ban">Select user(s) to ban:</label>
       <select id="selected-users-ban" name="selected_nicks" multiple size="10" style="min-height:12rem;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">
         {% for u in users %}
-        <option value="{{ u.nick }}">{% if 'o' in u.modes %}@{% elif 'v' in u.modes %}+{% else %} {% endif %} {{ u.nick }} ({{ u.nick }}!*@*)</option>
+        <option value="{{ u.nick }}">{% if 'o' in u.modes %}@{% elif 'v' in u.modes %}+{% else %} {% endif %} {{ u.nick }}</option>
         {% endfor %}
+      </select>
+      <label for="ban-preset">Ban mask preset:</label>
+      <select id="ban-preset" name="ban_preset" {% if not can_moderate %}disabled{% endif %}>
+        <option value="nick">Nick mask: nick!*@*</option>
+        <option value="ident">Ident mask: *!user@*</option>
+        <option value="host">Host mask: *!*@host</option>
+        <option value="domain">Domain mask: *!*@*.domain.tld</option>
+        <option value="exact">Exact hostmask: nick!user@host</option>
       </select>
       <input type="text" name="ban_reason" placeholder="Ban reason (optional)" {% if not can_moderate %}disabled{% endif %}>
       <button type="submit" {% if not can_moderate %}disabled{% endif %}>Ban Selected</button>

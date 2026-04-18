@@ -91,7 +91,10 @@ async def save_settings(
         result = await session.execute(select(User).where(User.nick == username))
         user = result.scalar_one_or_none()
         if not user or not await has_flag(session, user.hostmask, "n"):
-            return RedirectResponse(url="/settings?error=Owner+required", status_code=303)
+            return RedirectResponse(
+                url="/settings?error=Owner+flag+required+to+edit+settings.",
+                status_code=303,
+            )
 
     try:
         parsed = yaml.safe_load(config_yaml)
@@ -102,11 +105,15 @@ async def save_settings(
         import urllib.parse
 
         return RedirectResponse(
-            url=f"/settings?error={urllib.parse.quote(str(exc))}", status_code=303
+            url=f"/settings?error={urllib.parse.quote(str(exc))}",
+            status_code=303,
         )
 
     config_path = _resolve_config_path()
     config_path.parent.mkdir(exist_ok=True)
     config_path.write_text(config_yaml, encoding="utf-8")
 
-    return RedirectResponse(url="/settings?saved=1", status_code=303)
+    return RedirectResponse(
+        url="/settings?success=Settings+saved+successfully.",
+        status_code=303,
+    )

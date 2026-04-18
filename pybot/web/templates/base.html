@@ -131,6 +131,36 @@
       color: var(--danger-color);
       background: var(--danger-bg);
     }
+    .flash-stack {
+      position: sticky;
+      top: 0.75rem;
+      z-index: 50;
+      display: grid;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .flash-banner {
+      border: 1px solid var(--muted-border-color);
+      border-left-width: 4px;
+      border-radius: 0.75rem;
+      padding: 0.8rem 1rem;
+      background: rgba(11, 27, 23, 0.96);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+      backdrop-filter: blur(8px);
+    }
+    .flash-banner strong {
+      display: inline-block;
+      margin-right: 0.45rem;
+    }
+    .flash-success {
+      border-left-color: var(--pico-primary);
+    }
+    .flash-error {
+      border-left-color: var(--danger-color);
+    }
+    .flash-info {
+      border-left-color: var(--warn-color);
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
@@ -156,7 +186,33 @@
   </form>
 </aside>
 <main class="main-content">
+  {% set flash_success = request.query_params.get('success') %}
+  {% set flash_error = request.query_params.get('error') %}
+  {% set flash_info = request.query_params.get('info') %}
+  {% if flash_success or flash_error or flash_info %}
+  <div class="flash-stack" aria-live="polite">
+    {% if flash_success %}
+    <div class="flash-banner flash-success"><strong>Success</strong>{{ flash_success }}</div>
+    {% endif %}
+    {% if flash_error %}
+    <div class="flash-banner flash-error"><strong>Error</strong>{{ flash_error }}</div>
+    {% endif %}
+    {% if flash_info %}
+    <div class="flash-banner flash-info"><strong>Notice</strong>{{ flash_info }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
   {% block content %}{% endblock %}
 </main>
+<script>
+  for (const flash of document.querySelectorAll('.flash-banner')) {
+    window.setTimeout(() => {
+      flash.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      flash.style.opacity = '0';
+      flash.style.transform = 'translateY(-4px)';
+      window.setTimeout(() => flash.remove(), 320);
+    }, 4500);
+  }
+</script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 {% block content %}
 <h2>Dashboard</h2>
 
-<div class="grid">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start;">
   <article>
     <header><strong>Bot Status</strong></header>
     <p>
@@ -41,6 +41,24 @@
     </div>
   </article>
 
+  <article>
+    <header><strong>Health</strong></header>
+    <p>IRC: <strong>{{ health.irc }}</strong></p>
+    <p>Registration: <strong>{{ health.registration }}</strong></p>
+    <p>Database: <strong>{{ health.database }}</strong></p>
+    <p>Plugins: <strong>{{ health.plugins }}</strong></p>
+  </article>
+
+  <article>
+    <header><strong>Runtime</strong></header>
+    <p>Config: <code>{{ runtime.config_path }}</code></p>
+    <p>Web: <code>{{ runtime.web_bind }}</code></p>
+    <p>Partyline: <code>{{ runtime.partyline_bind }}</code></p>
+    <p>Admins connected: <strong>{{ runtime.admins }}</strong></p>
+  </article>
+</div>
+
+<div class="grid" style="grid-template-columns:minmax(0,1fr);margin-top:1rem;">
   <article>
     <header><strong>Channels ({{ channels|length }})</strong></header>
     {% for ch in channels %}
