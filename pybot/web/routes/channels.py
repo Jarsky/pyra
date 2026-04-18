@@ -16,13 +16,11 @@ router = APIRouter()
 
 def get_form_str(form: FormData, key: str, default: str = "") -> str:
     """Safely extract and convert form field to string."""
-    val = form.get(key)
-    if val is None:
+    val_raw = form.get(key)
+    if not val_raw:
         return default
-    if isinstance(val, str):
-        return val.strip()
-    # UploadFile case - convert to string representation
-    return str(val).strip()
+    result = str(val_raw).strip()
+    return result if result else default
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -174,32 +172,32 @@ async def channel_admin_action(
     elif action == "kick":
         nicks = form.getlist("selected_nicks")
         if not nicks:
-            nick = get_form_str(form, "nick")  # type: ignore[assignment]
-            nicks = [nick] if nick else []
-        reason = get_form_str(form, "reason")  # type: ignore[assignment]
+            nick_val = get_form_str(form, "nick")
+            nicks = [nick_val] if nick_val else []
+        reason_val = get_form_str(form, "reason")
         if can_moderate and nicks:
             for nick in nicks:
                 nick_str = nick if isinstance(nick, str) else str(nick)
-                await bot.kick(channel_name, nick_str.strip(), reason)
+                await bot.kick(channel_name, nick_str.strip(), reason_val)
     elif action == "ban":
         hostmasks = form.getlist("selected_hostmasks")
-        reason = get_form_str(form, "ban_reason")  # type: ignore[assignment]
+        reason_val = get_form_str(form, "ban_reason")
         if not hostmasks:
-            hostmask = get_form_str(form, "hostmask")  # type: ignore[assignment]
-            hostmasks = [hostmask] if hostmask else []
+            hostmask_val = get_form_str(form, "hostmask")
+            hostmasks = [hostmask_val] if hostmask_val else []
         if can_moderate and hostmasks:
             for hostmask in hostmasks:
                 hm = hostmask if isinstance(hostmask, str) else str(hostmask)
                 hm = hm.strip()
                 if hm:
                     await bot.ban(channel_name, hm)
-                    if reason:
-                        await bot.say(channel_name, f"Banned {hm} - {reason}")
+                    if reason_val:
+                        await bot.say(channel_name, f"Banned {hm} - {reason_val}")
     elif action == "unban":
         hostmasks = form.getlist("unban_selected")
         if not hostmasks:
-            hostmask = get_form_str(form, "hostmask")  # type: ignore[assignment]
-            hostmasks = [hostmask] if hostmask else []
+            hostmask_val = get_form_str(form, "hostmask")
+            hostmasks = [hostmask_val] if hostmask_val else []
         if can_moderate and hostmasks:
             for hostmask in hostmasks:
                 hm = hostmask if isinstance(hostmask, str) else str(hostmask)
