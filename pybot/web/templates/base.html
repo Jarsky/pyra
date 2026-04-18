@@ -7,8 +7,30 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <script src="/static/htmx.min.js"></script>
   <style>
-    :root { --sidebar-width: 220px; }
-    body { display: flex; min-height: 100vh; }
+    :root {
+      --sidebar-width: 220px;
+      --pico-primary: #49dba2;
+      --pico-primary-hover: #6df0bd;
+      --pico-primary-focus: rgba(73, 219, 162, 0.35);
+      --pico-primary-inverse: #04140f;
+      --pico-card-background-color: #0b1b17;
+      --pico-background-color: #06100e;
+      --pico-muted-border-color: #1a3a32;
+      --pico-color: #dafbee;
+      --pico-muted-color: #9ad8c3;
+      --warn-color: #f2c14e;
+      --warn-bg: #3a2b10;
+      --danger-color: #ff6b6b;
+      --danger-bg: #3a1515;
+    }
+    body {
+      display: flex;
+      min-height: 100vh;
+      background:
+        radial-gradient(1200px 700px at 100% -20%, rgba(73, 219, 162, 0.12), transparent 60%),
+        radial-gradient(900px 500px at -10% 120%, rgba(73, 219, 162, 0.08), transparent 60%),
+        var(--background-color);
+    }
     .sidebar {
       width: var(--sidebar-width);
       background: var(--card-background-color);
@@ -28,6 +50,9 @@
       background: var(--primary);
       color: var(--primary-inverse);
     }
+    .sidebar nav a.active {
+      box-shadow: inset 0 0 0 1px rgba(73, 219, 162, 0.2);
+    }
     .main-content { flex: 1; padding: 1.5rem; overflow-x: auto; }
     .status-dot {
       display: inline-block; width: 10px; height: 10px;
@@ -44,6 +69,51 @@
     }
     .console-input { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
     .console-input input { flex: 1; font-family: monospace; }
+    .control-actions {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .control-actions form {
+      margin: 0;
+    }
+    .control-btn {
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--muted-border-color);
+      background: transparent;
+      color: var(--color);
+    }
+    .control-btn svg {
+      width: 0.95rem;
+      height: 0.95rem;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .control-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      transform: translateY(-1px);
+    }
+    .control-btn-restart {
+      border-color: var(--warn-color);
+      color: var(--warn-color);
+      background: var(--warn-bg);
+    }
+    .control-btn-shutdown {
+      border-color: var(--danger-color);
+      color: var(--danger-color);
+      background: var(--danger-bg);
+    }
   </style>
   {% block head %}{% endblock %}
 </head>

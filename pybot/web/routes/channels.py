@@ -181,7 +181,14 @@ async def channel_admin_action(
                 await bot.kick(channel_name, nick_str.strip(), reason_val)
     elif action == "ban":
         hostmasks = form.getlist("selected_hostmasks")
+        selected_nicks = form.getlist("selected_nicks")
         reason_val = get_form_str(form, "ban_reason")
+        if not hostmasks and selected_nicks:
+            hostmasks = [
+                f"{(nick if isinstance(nick, str) else str(nick)).strip()}!*@*"
+                for nick in selected_nicks
+                if str(nick).strip()
+            ]
         if not hostmasks:
             hostmask_val = get_form_str(form, "hostmask")
             hostmasks = [hostmask_val] if hostmask_val else []

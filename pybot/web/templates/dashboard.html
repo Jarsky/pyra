@@ -13,15 +13,30 @@
     <p>Server: <code>{{ server }}</code></p>
     <p>Uptime: <strong id="uptime-val">{{ uptime }}</strong></p>
     <p>Version: <code>{{ version }}</code></p>
-    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end">
-      <form method="post" action="/control/reload" style="margin:0">
-        <button type="submit" class="outline" style="padding:0.2rem 0.55rem">Reload</button>
+    <div class="control-actions" aria-label="Bot controls">
+      <form method="post" action="/control/reload" title="Reload" aria-label="Reload bot">
+        <button type="submit" class="control-btn" aria-label="Reload bot">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+            <polyline points="21 3 21 9 15 9"></polyline>
+          </svg>
+        </button>
       </form>
-      <form method="post" action="/control/restart" style="margin:0" onsubmit="return confirm('Restart bot process?')">
-        <button type="submit" class="secondary outline" style="padding:0.2rem 0.55rem">Restart</button>
+      <form method="post" action="/control/restart" title="Restart" aria-label="Restart bot" onsubmit="return confirm('Restart bot process?')">
+        <button type="submit" class="control-btn control-btn-restart" aria-label="Restart bot">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15A9 9 0 1 1 23 10"></path>
+          </svg>
+        </button>
       </form>
-      <form method="post" action="/control/shutdown" style="margin:0" onsubmit="return confirm('Shutdown bot process?')">
-        <button type="submit" class="contrast" style="padding:0.2rem 0.55rem">Shutdown</button>
+      <form method="post" action="/control/shutdown" title="Shutdown" aria-label="Shutdown bot" onsubmit="return confirm('Shutdown bot process?')">
+        <button type="submit" class="control-btn control-btn-shutdown" aria-label="Shutdown bot">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <line x1="12" y1="2" x2="12" y2="12"></line>
+            <path d="M5.2 7.2a9 9 0 1 0 13.6 0"></path>
+          </svg>
+        </button>
       </form>
     </div>
   </article>
