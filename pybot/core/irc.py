@@ -398,11 +398,12 @@ class IRCConnection:
 
         # Wait for reader to exit (connection dropped or cancelled)
         try:
-            await asyncio.gather(*self._tasks)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.error(f"IRC task error: {exc}")
+            results = await asyncio.gather(*self._tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, asyncio.CancelledError):
+                    continue
+                if isinstance(result, Exception):
+                    logger.error(f"IRC task error: {result}")
         finally:
             self._connected = False
             self._registered = False
@@ -443,8 +444,10 @@ class IRCConnection:
         except Exception as exc:
             logger.error(f"Reader loop error: {exc}")
         finally:
+            current = asyncio.current_task()
             for task in self._tasks:
-                task.cancel()
+                if task is not current and not task.done():
+                    task.cancel()
 
     # ------------------------------------------------------------------
     # Writer loop (token bucket flood control)
