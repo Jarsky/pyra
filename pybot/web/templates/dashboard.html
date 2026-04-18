@@ -22,11 +22,11 @@
           </svg>
         </button>
       </form>
-      <form method="post" action="/control/restart" title="Restart" aria-label="Restart bot" onsubmit="return confirm('Restart bot process?')">
+      <form method="post" action="/control/restart" title="Restart" aria-label="Restart bot" id="restart-form" onsubmit="handleRestart(event)">
         <button type="submit" class="control-btn control-btn-restart" aria-label="Restart bot">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <path d="M20.49 15A9 9 0 1 1 23 10"></path>
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 .49-4.5"></path>
           </svg>
         </button>
       </form>
@@ -81,9 +81,45 @@
   {% endfor %}
 </div>
 
+<div id="restart-overlay" role="dialog" aria-modal="true" aria-label="Restarting" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:200;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;">
+  <svg viewBox="0 0 24 24" style="width:3rem;height:3rem;stroke:var(--pico-primary);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;animation:spin 1.2s linear infinite;">
+    <polyline points="1 4 1 10 7 10"></polyline>
+    <path d="M3.51 15a9 9 0 1 0 .49-4.5"></path>
+  </svg>
+  <p style="font-size:1.15rem;font-weight:600;margin:0;">Restarting&hellip;</p>
+  <small id="restart-status" style="color:var(--muted-color);">Waiting for bot to come back online&hellip;</small>
+</div>
+
 <script>
   // Auto-scroll to bottom of log
   const logTail = document.getElementById('log-tail');
   if (logTail) logTail.scrollTop = logTail.scrollHeight;
+
+  function handleRestart(e) {
+    e.preventDefault();
+    if (!confirm('Restart bot process?')) return;
+    const overlay = document.getElementById('restart-overlay');
+    const status  = document.getElementById('restart-status');
+    overlay.style.display = 'flex';
+    // Fire the POST; ignore errors — the process may die before responding
+    fetch('/control/restart', { method: 'POST', credentials: 'include' }).catch(() => {});
+    let attempts = 0;
+    const MAX = 90; // give up after ~3 min
+    const poll = setInterval(() => {
+      attempts++;
+      status.textContent = `Reconnecting\u2026 (${attempts}/${MAX})`;
+      if (attempts >= MAX) {
+        clearInterval(poll);
+        status.textContent = 'Bot did not come back. Check server logs.';
+        return;
+      }
+      fetch('/', { method: 'HEAD', cache: 'no-store', credentials: 'include' })
+        .then(r => { if (r.ok) { clearInterval(poll); window.location.href = '/'; } })
+        .catch(() => { /* still down — keep polling */ });
+    }, 2000);
+  }
 </script>
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
 {% endblock %}
