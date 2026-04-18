@@ -29,6 +29,18 @@
 
 ---
 
+## Screenshots
+
+| Web UI | Partyline |
+|--------|-----------|
+| ![Web UI placeholder](https://placehold.co/1200x700/06100e/49dba2?text=Web+UI+Screenshot) | ![Partyline placeholder](https://placehold.co/1200x700/06100e/49dba2?text=Partyline+Screenshot) |
+
+| Channels Admin | Console |
+|----------------|---------|
+| ![Channels placeholder](https://placehold.co/1200x700/06100e/49dba2?text=Channels+Admin+Screenshot) | ![Console placeholder](https://placehold.co/1200x700/06100e/49dba2?text=Web+Console+Screenshot) |
+
+---
+
 ## Quick Start
 
 ### Basic Docker (recommended)
@@ -100,77 +112,17 @@ See [docs/config.md](docs/config.md) for full reference.
 
 ---
 
-## Plugin API
+## Plugin Development
 
-Writing a plugin is minimal:
+Pyra plugins are regular Python files dropped into `plugins_extra/`, with decorator-based hooks for commands, regex rules, and scheduled tasks.
 
-```python
-from pybot import plugin
-
-@plugin.command("hello", help="Say hello")
-async def hello(bot, trigger):
-    await bot.reply(trigger, f"Hello, {trigger.nick}!")
-
-@plugin.rule(r"(?i)good(morning|night)")
-async def greet_time(bot, trigger):
-    await bot.say(trigger.channel, f"Hey {trigger.nick}!")
-
-@plugin.interval(300)
-async def periodic_task(bot):
-    pass  # runs every 5 minutes
-```
-
-Drop `.py` files into `plugins_extra/` — they load automatically.
-
-### Plugin API keys & settings
-
-API keys and per-plugin settings live in `config.yaml` under `plugins.vars` — gitignored, so secrets never touch source control:
-
-```yaml
-# config/config.yaml
-plugins:
-  vars:
-    myplugin:
-      api_key: "your-secret-key"
-      max_results: 5
-```
-
-Read them in your plugin with `bot.plugin_config("myplugin")`:
-
-```python
-@plugin.command("query")
-async def cmd_query(bot, trigger):
-    cfg = bot.plugin_config("myplugin")
-    api_key = cfg.get("api_key", "")
-    ...
-```
-
-Returns `{}` if no vars are configured, so `.get("key", default)` is always safe.
-
-See [docs/plugins.md](docs/plugins.md) for full API reference.
+See [docs/plugins.md](docs/plugins.md) for the full plugin API, config examples, and plugin-specific settings under `plugins.vars`.
 
 ---
 
 ## Permissions
 
-Pyra uses Eggdrop-style flag-based ACL:
-
-| Flag | Scope | Meaning |
-|------|-------|---------|
-| `n` | global | Owner — full control |
-| `a` | global | Admin — manage bot |
-| `o` | global/channel | Op — moderation |
-| `v` | global/channel | Voice — trusted user |
-| `b` | global | Bot — peer bot |
-| `I` | global | Ignore — all commands rejected |
-| `X` | global/channel | Exempt — bypasses antispam |
-
-```bash
-# In channel or partyline:
-!adduser nick *!user@host.example.com
-!flags nick +a
-!flags nick #channel +o
-```
+Pyra uses Eggdrop-style flag-based ACL with global and per-channel overrides for owners, admins, ops, voice, ignores, and antispam exemptions.
 
 See [docs/permissions.md](docs/permissions.md) for full reference.
 
@@ -183,13 +135,10 @@ The web UI runs on port `8080` by default:
 - **Default login** — on first run, owner login is bootstrapped from config:
   `username = core.owner`, `password = partyline.password`
 
-- **Dashboard** — live uptime, channels, recent logs
-- **Channels** — per-channel settings (greet, antispam, flood control)
-- **Users** — user management, flag assignment
-- **Plugins** — load/unload/reload plugins
-- **Logs** — searchable, filterable IRC log viewer
-- **Console** — WebSocket terminal (equivalent to partyline)
-- **Settings** — YAML config editor (owner only)
+- **Dashboard** — uptime, channels, and recent activity
+- **Channels** — settings and moderation controls
+- **Users** — user management and flags
+- **Plugins / Logs / Console / Settings** — operational admin tools in one place
 
 ---
 
@@ -206,7 +155,7 @@ pybot-ctl console
 Login credentials are the same as web by default:
 `username = core.owner`, `password = partyline.password`.
 
-Commands: `!say #chan msg`, `!join #chan`, `!part #chan`, `!reload plugin`, `who`, `channels`, `!raw <irc>` (owner), `shutdown` (owner).
+Partyline provides a live admin console with bot controls, channel operations, and a real-time IRC event stream.
 
 ---
 
@@ -238,6 +187,15 @@ See [docs/deployment.md](docs/deployment.md) for:
 
 ---
 
+## Documentation
+
+- [Configuration reference](docs/config.md)
+- [Deployment guide](docs/deployment.md)
+- [Permissions reference](docs/permissions.md)
+- [Plugin API and configuration](docs/plugins.md)
+
+---
+
 ## Development
 
 ```bash
@@ -262,23 +220,9 @@ alembic revision --autogenerate -m "describe change"
 
 ## Built-in Plugins
 
-| Plugin | Commands | Description |
-|--------|----------|-------------|
-| `admin` | `!join !part !quit !reload !say !raw !adduser !deluser !flags !ignore` | Bot administration |
-| `adminchannel` | `!op !deop !voice !devoice !kick !ban !unban !kickban !topic !mode` | Channel moderation |
-| `antispam` | — | Auto flood/caps/repeat detection |
-| `calc` | `!calc !c` | Safe math evaluator |
-| `choose` | `!choose !8ball` | Random choice / magic 8-ball |
-| `dice` | `!roll !rand` | NdM+K dice roller |
-| `greet` | `!greet` | Per-channel join greeting |
-| `help` | `!help` | Command reference |
-| `notes` | `!note` | Personal note storage |
-| `search` | `!search !wiki !define` | DuckDuckGo / Wikipedia search |
-| `seen` | `!seen` | Nick last-seen tracker |
-| `tell` | `!tell` | Offline message delivery |
-| `uptime` | `!uptime` | Bot uptime display |
-| `url` | — | Auto URL title fetching |
-| `weather` | `!weather !forecast` | Weather via Open-Meteo |
+Included plugins cover administration, moderation, antispam, utilities, notes, offline tells, search, URL titles, and weather.
+
+See [docs/plugins.md](docs/plugins.md) for plugin details and [plugins_extra/OPTIONAL_PLUGINS.md](plugins_extra/OPTIONAL_PLUGINS.md) for optional extras.
 
 ---
 
