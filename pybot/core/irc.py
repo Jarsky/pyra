@@ -581,7 +581,7 @@ class IRCConnection:
                 return  # More caps coming
 
             # Request the intersection of desired and available
-            to_request = DESIRED_CAPS & self._caps_available
+            to_request = self._desired_caps() & self._caps_available
             if to_request:
                 await self.send_raw(f"CAP REQ :{' '.join(sorted(to_request))}")
             else:
@@ -617,8 +617,34 @@ class IRCConnection:
         if mechanism == "none":
             await self.send_raw("CAP END")
             return
+
+        if not self._sasl_is_configured():
+            logger.warning(
+                "SASL is enabled in config but credentials are incomplete; "
+                "continuing without SASL"
+            )
+            await self.send_raw("CAP END")
+            return
         logger.info(f"Beginning SASL {mechanism}")
         await self.send_raw(f"AUTHENTICATE {mechanism}")
+
+    def _desired_caps(self) -> set[str]:
+        caps = set(DESIRED_CAPS)
+        if not self._sasl_is_configured():
+            caps.discard("sasl")
+        return caps
+
+    def _sasl_is_configured(self) -> bool:
+        auth = self._config.auth
+        mechanism = auth.sasl_mechanism
+
+        if mechanism == "none":
+            return False
+        if mechanism == "EXTERNAL":
+            return bool(auth.certfile)
+        if mechanism in {"PLAIN", "SCRAM-SHA-256"}:
+            return bool(auth.sasl_password.get_secret_value())
+        return False
 
     async def _on_authenticate(self, msg: IRCMessage) -> None:
         """Server sent AUTHENTICATE prompt."""
