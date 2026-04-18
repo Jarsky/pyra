@@ -13,13 +13,24 @@
     <p>Server: <code>{{ server }}</code></p>
     <p>Uptime: <strong id="uptime-val">{{ uptime }}</strong></p>
     <p>Version: <code>{{ version }}</code></p>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end">
+      <form method="post" action="/control/reload" style="margin:0">
+        <button type="submit" class="outline" style="padding:0.2rem 0.55rem">Reload</button>
+      </form>
+      <form method="post" action="/control/restart" style="margin:0" onsubmit="return confirm('Restart bot process?')">
+        <button type="submit" class="secondary outline" style="padding:0.2rem 0.55rem">Restart</button>
+      </form>
+      <form method="post" action="/control/shutdown" style="margin:0" onsubmit="return confirm('Shutdown bot process?')">
+        <button type="submit" class="contrast" style="padding:0.2rem 0.55rem">Shutdown</button>
+      </form>
+    </div>
   </article>
 
   <article>
     <header><strong>Channels ({{ channels|length }})</strong></header>
     {% for ch in channels %}
     <p>
-      <a href="/channels/{{ ch.name }}/settings"><code>{{ ch.name }}</code></a>
+      <a href="/channels/{{ ch.name|replace('#', '%23') }}/settings"><code>{{ ch.name }}</code></a>
       — {{ ch.users }} users
       {% if ch.topic %}<small>{{ ch.topic }}</small>{% endif %}
     </p>

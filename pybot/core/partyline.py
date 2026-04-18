@@ -69,6 +69,12 @@ class PartylineServer:
             if session.authenticated and session is not exclude:
                 await session.send(message)
 
+        for queue in list(getattr(self, "_ws_queues", [])):
+            try:
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                continue
+
     async def on_irc_message(self, msg: "IRCMessage") -> None:
         """Called by the bot for every incoming IRC message — stream to sessions."""
         if not self._sessions:
@@ -79,6 +85,11 @@ class PartylineServer:
             for session in list(self._sessions):
                 if session.authenticated:
                     await session.send(line)
+            for queue in list(getattr(self, "_ws_queues", [])):
+                try:
+                    queue.put_nowait(line)
+                except asyncio.QueueFull:
+                    continue
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -119,8 +130,8 @@ class PartylineSession:
             return
         await self.send(
             f"\r\nWelcome to the Pyra partyline, {self.nick}!\r\n"
-            "Type a command (e.g. !say #chan Hello) or * message to chat.\r\n"
-            "Type 'who' to see connected admins, 'quit' to disconnect.\r\n"
+            "Type .help to list commands, or * message to chat.\r\n"
+            "Use .quit to disconnect.\r\n"
         )
         await self._server.broadcast(f"*** {self.nick} joined the partyline", exclude=self)
 
@@ -241,73 +252,91 @@ class PartylineSession:
 
         # Commands
         lower = line.lower().strip()
+        if not lower.startswith("."):
+            await self.send("Unknown command. Use .help\r\n")
+            return
 
-        if lower == "quit":
+        cmd, _, argline = lower[1:].partition(" ")
+        raw_args = line[1 + len(cmd) :].strip()
+
+        if cmd == "quit":
             await self.send("Goodbye!\r\n")
             self._writer.close()
 
-        elif lower == "who":
+        elif cmd == "help":
+            await self.send(
+                "Commands:\r\n"
+                "  .help\r\n"
+                "  .who\r\n"
+                "  .channels\r\n"
+                "  .say <#chan> <message>\r\n"
+                "  .join <#chan>\r\n"
+                "  .part <#chan>\r\n"
+                "  .reload               (reload config + all plugins)\r\n"
+                "  .restart              (owner only)\r\n"
+                "  .shutdown             (owner only)\r\n"
+                "  .raw <line>           (owner only)\r\n"
+                "  .quit\r\n"
+            )
+
+        elif cmd == "who":
             await self._cmd_who()
 
-        elif lower == "channels":
+        elif cmd == "channels":
             await self._cmd_channels()
 
-        elif lower.startswith("!say "):
-            # !say #channel message
-            parts = line[5:].split(None, 1)
+        elif cmd == "say":
+            parts = raw_args.split(None, 1)
             if len(parts) == 2:
                 await self._bot.say(parts[0], parts[1])
                 await self.send(f"Said to {parts[0]}: {parts[1]}\r\n")
+            else:
+                await self.send("Usage: .say <#chan> <message>\r\n")
 
-        elif lower.startswith("!join "):
-            channel = line[6:].strip()
+        elif cmd == "join":
+            channel = raw_args.strip()
             await self._bot.join(channel)
             await self.send(f"Joining {channel}...\r\n")
 
-        elif lower.startswith("!part "):
-            channel = line[6:].strip()
+        elif cmd == "part":
+            channel = raw_args.strip()
             await self._bot.part(channel)
             await self.send(f"Parting {channel}...\r\n")
 
-        elif lower.startswith("!reload "):
-            name = line[8:].strip()
-            if self._bot.plugin_loader:
-                try:
-                    await self._bot.plugin_loader.reload(name)
-                    await self.send(f"Plugin '{name}' reloaded.\r\n")
-                except Exception as exc:
-                    await self.send(f"Reload error: {exc}\r\n")
+        elif cmd == "reload":
+            try:
+                await self._bot.reload_runtime()
+                await self.send("Reloaded config and all plugins.\r\n")
+            except Exception as exc:
+                await self.send(f"Reload error: {exc}\r\n")
 
-        elif lower.startswith("!raw "):
-            # raw is owner-only — check flag
-            from pybot.core.database import get_session
-            from pybot.core.permissions import has_flag
-
-            async with get_session() as session:
-                if not await has_flag(session, f"{self.nick}!*@*", "n"):
-                    await self.send("Permission denied (requires owner flag).\r\n")
-                    return
-            raw_line = line[5:].strip()
+        elif cmd == "raw":
+            if not self._is_owner():
+                await self.send("Permission denied (owner only).\r\n")
+                return
+            raw_line = raw_args.strip()
             await self._bot.raw(raw_line)
             await self.send(f"Sent: {raw_line}\r\n")
 
-        elif lower == "shutdown":
-            from pybot.core.database import get_session
-            from pybot.core.permissions import has_flag
-
-            async with get_session() as session:
-                if not await has_flag(session, f"{self.nick}!*@*", "n"):
-                    await self.send("Permission denied (requires owner flag).\r\n")
-                    return
+        elif cmd == "shutdown":
+            if not self._is_owner():
+                await self.send("Permission denied (owner only).\r\n")
+                return
             await self.send("Shutting down bot...\r\n")
-            await self._bot.quit("Shutdown by partyline admin")
+            await self._bot.shutdown_process("Shutdown by partyline admin")
+
+        elif cmd == "restart":
+            if not self._is_owner():
+                await self.send("Permission denied (owner only).\r\n")
+                return
+            await self.send("Restarting bot...\r\n")
+            await self._bot.restart_process()
 
         else:
-            await self.send(
-                "Commands: who, channels, !say <chan> <msg>, !join <chan>, !part <chan>, "
-                "!reload <plugin>, !raw <line> (owner), shutdown (owner), quit\r\n"
-                "Type *message to chat with other partyline users.\r\n"
-            )
+            await self.send("Unknown command. Use .help\r\n")
+
+    def _is_owner(self) -> bool:
+        return bool(self.nick and self.nick.lower() == self._bot.config.core.owner.lower())
 
     async def _cmd_who(self) -> None:
         sessions = [s for s in self._server._sessions if s.authenticated]

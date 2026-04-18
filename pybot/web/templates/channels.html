@@ -2,20 +2,29 @@
 {% block title %}Channels{% endblock %}
 {% block content %}
 <h2>Channels</h2>
-{% if channels %}
-<table>
-  <thead><tr><th>Channel</th><th>Users</th><th>Topic</th><th>Actions</th></tr></thead>
-  <tbody>
-  {% for ch in channels %}
-  <tr>
-    <td><code>{{ ch.name }}</code></td>
-    <td>{{ ch.nicks|length }}</td>
-    <td>{{ ch.topic[:60] if ch.topic else '—' }}</td>
-    <td><a href="/channels/{{ ch.name|replace('#', '%23') }}/settings" role="button" class="outline" style="padding:0.2rem 0.6rem">Settings</a></td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
+{% if grouped_channels %}
+{% for group in grouped_channels %}
+<article>
+  <header><strong>Server:</strong> <code>{{ group.server }}</code></header>
+  <table>
+    <thead><tr><th>Channel</th><th>Users</th><th>Topic</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for ch in group.channels %}
+    {% set url_name = channel_urls[ch.name] %}
+    <tr>
+      <td><code>{{ ch.name }}</code></td>
+      <td>{{ ch.nicks|length }}</td>
+      <td>{{ ch.topic[:60] if ch.topic else '—' }}</td>
+      <td style="white-space:nowrap">
+        <a href="/channels/{{ url_name }}/settings" role="button" class="outline" style="padding:0.2rem 0.6rem">Settings</a>
+        <a href="/channels/{{ url_name }}/admin" role="button" class="secondary outline" style="padding:0.2rem 0.6rem">Admin</a>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</article>
+{% endfor %}
 {% else %}
 <p>No channels currently joined.</p>
 {% endif %}

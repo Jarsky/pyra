@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ channel_name }} Admin{% endblock %}
+{% block content %}
+<h2>Channel Admin: <code>{{ channel_name }}</code></h2>
+
+<p>
+  Bot nick: <code>{{ bot_nick }}</code>
+  {% if can_moderate %}
+  <span style="margin-left:0.6rem;padding:0.15rem 0.45rem;border-radius:999px;background:#1f6f43;color:#fff">Can moderate</span>
+  {% else %}
+  <span style="margin-left:0.6rem;padding:0.15rem 0.45rem;border-radius:999px;background:#6c757d;color:#fff">Limited access</span>
+  {% endif %}
+</p>
+
+{% if not can_moderate %}
+<article>
+  <p><strong>Note:</strong> moderation actions are disabled until the bot has channel operator mode (+o).</p>
+</article>
+{% endif %}
+
+<div class="grid">
+  <article>
+    <header><strong>Topic</strong></header>
+    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
+      <input type="hidden" name="action" value="topic">
+      <input type="text" name="topic" placeholder="New topic" {% if not can_moderate %}disabled{% endif %}>
+      <button type="submit" {% if not can_moderate %}disabled{% endif %}>Set Topic</button>
+    </form>
+  </article>
+
+  <article>
+    <header><strong>Modes</strong></header>
+    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
+      <input type="hidden" name="action" value="mode">
+      <div class="grid">
+        <input type="text" name="mode" placeholder="e.g. +m or +o" {% if not can_moderate %}disabled{% endif %}>
+        <input type="text" name="mode_args" placeholder="args (optional)" {% if not can_moderate %}disabled{% endif %}>
+      </div>
+      <button type="submit" {% if not can_moderate %}disabled{% endif %}>Apply Mode</button>
+    </form>
+    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action" style="margin-top:0.6rem">
+      <input type="hidden" name="action" value="banlist">
+      <button type="submit" class="outline" {% if not can_moderate %}disabled{% endif %}>Request Ban List</button>
+    </form>
+  </article>
+</div>
+
+<div class="grid">
+  <article>
+    <header><strong>Kick User</strong></header>
+    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
+      <input type="hidden" name="action" value="kick">
+      <div class="grid">
+        <input type="text" name="nick" placeholder="nick" {% if not can_moderate %}disabled{% endif %}>
+        <input type="text" name="reason" placeholder="reason (optional)" {% if not can_moderate %}disabled{% endif %}>
+      </div>
+      <button type="submit" {% if not can_moderate %}disabled{% endif %}>Kick</button>
+    </form>
+  </article>
+
+  <article>
+    <header><strong>Ban / Unban</strong></header>
+    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
+      <input type="hidden" name="action" value="ban">
+      <input type="text" name="hostmask" placeholder="*!*@example.net" {% if not can_moderate %}disabled{% endif %}>
+      <button type="submit" {% if not can_moderate %}disabled{% endif %}>Ban</button>
+    </form>
+    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action" style="margin-top:0.6rem">
+      <input type="hidden" name="action" value="unban">
+      <input type="text" name="hostmask" placeholder="*!*@example.net" {% if not can_moderate %}disabled{% endif %}>
+      <button type="submit" class="secondary" {% if not can_moderate %}disabled{% endif %}>Unban</button>
+    </form>
+  </article>
+</div>
+
+<article>
+  <header><strong>Users In Channel</strong></header>
+  {% if users %}
+  <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+    {% for u in users %}
+    <span style="padding:0.15rem 0.45rem;border-radius:999px;background:var(--card-background-color);border:1px solid var(--muted-border-color)">
+      {% if 'o' in u.modes %}@{% elif 'v' in u.modes %}+{% endif %}{{ u.nick }}
+    </span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p>No tracked users in this channel yet.</p>
+  {% endif %}
+</article>
+
+<p><a href="/channels" role="button" class="secondary outline">Back to Channels</a></p>
+{% endblock %}

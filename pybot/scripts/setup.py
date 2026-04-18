@@ -96,17 +96,16 @@ def _generate_secret_key() -> str:
 async def _init_db_and_owner(
     config_path: Path, owner_nick: str, owner_host: str, owner_password: str
 ) -> None:
-    import bcrypt
-
     from pybot.core.config import load_config
     from pybot.core.database import get_session, init_db
     from pybot.core.permissions import add_owner_bootstrap
+    from pybot.web.auth import hash_password
 
     config = load_config(config_path)
     await init_db(config.database.url, echo=False)
 
     async with get_session() as session:
-        hashed = bcrypt.hashpw(owner_password.encode(), bcrypt.gensalt()).decode()
+        hashed = hash_password(owner_password)
         await add_owner_bootstrap(session, owner_nick, owner_host, hashed)
         await session.commit()
 
@@ -137,7 +136,7 @@ WantedBy=multi-user.target
 
 
 def main() -> None:
-    print("\033[1;35m")
+    print("\033[1;32m")
     print("  ██████╗ ██╗   ██╗██████╗  █████╗ ")
     print("  ██╔══██╗╚██╗ ██╔╝██╔══██╗██╔══██╗")
     print("  ██████╔╝ ╚████╔╝ ██████╔╝███████║")

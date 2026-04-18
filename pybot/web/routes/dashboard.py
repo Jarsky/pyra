@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pybot.web.app import templates
 from pybot.web.auth import get_current_user
@@ -75,3 +75,27 @@ def _get_version() -> str:
     from pybot import __version__
 
     return __version__
+
+
+@router.post("/control/{action}")
+async def dashboard_control(
+    action: str,
+    request: Request,
+    username: str = Depends(get_current_user),
+) -> RedirectResponse:
+    bot = request.app.state.bot
+
+    if username.lower() != bot.config.core.owner.lower():
+        return RedirectResponse(url="/?error=owner_required", status_code=303)
+
+    if action == "reload":
+        await bot.reload_runtime()
+        return RedirectResponse(url="/?saved=reload", status_code=303)
+    if action == "restart":
+        await bot.restart_process()
+        return RedirectResponse(url="/", status_code=303)
+    if action == "shutdown":
+        await bot.shutdown_process("Shutdown from dashboard")
+        return RedirectResponse(url="/", status_code=303)
+
+    return RedirectResponse(url="/", status_code=303)

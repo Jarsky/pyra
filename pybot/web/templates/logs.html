@@ -14,6 +14,10 @@
   </select>
   <button type="submit">Filter</button>
   <a href="/logs" role="button" class="secondary outline">Clear</a>
+  <label style="display:flex;align-items:center;gap:0.4rem;margin:0.25rem 0 0 0.5rem;">
+    <input type="checkbox" id="auto-update" checked>
+    Auto-update
+  </label>
 </form>
 
 <div class="log-container">
@@ -46,4 +50,50 @@
      role="button" class="outline">Next →</a>
   {% endif %}
 </div>
+
+<script>
+  const logsContainer = document.querySelector('.log-container');
+  const autoUpdate = document.getElementById('auto-update');
+
+  function currentFilters() {
+    const params = new URLSearchParams();
+    params.set('channel', document.querySelector('input[name="channel"]').value || '');
+    params.set('nick', document.querySelector('input[name="nick"]').value || '');
+    params.set('event_type', document.querySelector('select[name="event_type"]').value || '');
+    return params.toString();
+  }
+
+  async function refreshLogs() {
+    if (!autoUpdate.checked) {
+      return;
+    }
+    const wasNearBottom = logsContainer.scrollHeight - logsContainer.scrollTop - logsContainer.clientHeight < 30;
+    try {
+      const resp = await fetch(`/logs/stream?${currentFilters()}`);
+      if (!resp.ok) {
+        return;
+      }
+      const data = await resp.json();
+      logsContainer.innerHTML = '';
+      for (const line of data.lines || []) {
+        const row = document.createElement('div');
+        row.className = 'log-line';
+        row.textContent = line;
+        logsContainer.appendChild(row);
+      }
+      if ((data.lines || []).length === 0) {
+        const empty = document.createElement('div');
+        empty.textContent = 'No log entries found.';
+        logsContainer.appendChild(empty);
+      }
+      if (wasNearBottom) {
+        logsContainer.scrollTop = logsContainer.scrollHeight;
+      }
+    } catch (_err) {
+      // Keep the current page content on transient fetch failures.
+    }
+  }
+
+  setInterval(refreshLogs, 2000);
+</script>
 {% endblock %}

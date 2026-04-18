@@ -5,6 +5,8 @@ Main bot class — orchestrates all subsystems and provides the plugin API.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -163,6 +165,39 @@ class PyraBot:
 
     async def quit(self, message: str = "Pyra IRC Bot") -> None:
         await self.irc.quit(message)
+
+    async def reload_runtime(self) -> None:
+        """Reload config from disk and reload all loaded plugins."""
+        from pathlib import Path
+
+        from pybot.core.config import load_config
+
+        config_path = Path(os.environ.get("CONFIG_FILE", "config/config.yaml"))
+        new_config = load_config(config_path)
+
+        # Keep active runtime config in sync for IRC/web/partyline behavior.
+        self.config = new_config
+        self.irc._config = new_config
+
+        if self.plugin_loader:
+            await self.plugin_loader.reload_all()
+
+    async def shutdown_process(self, reason: str = "Shutdown requested") -> None:
+        """Gracefully stop the bot process."""
+        await self.quit(reason)
+        await self._shutdown()
+
+    async def restart_process(self) -> None:
+        """Restart the current bot process in-place."""
+        from pathlib import Path
+
+        config_path = Path(os.environ.get("CONFIG_FILE", "config/config.yaml"))
+        await self._shutdown()
+        # Controlled self-reexec for restart functionality.
+        os.execv(  # noqa: S606
+            sys.executable,
+            [sys.executable, "-m", "pybot", "--config", str(config_path)],
+        )
 
     async def raw(self, line: str) -> None:
         await self.irc.send_raw(line)

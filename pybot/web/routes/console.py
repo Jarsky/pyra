@@ -63,8 +63,7 @@ async def console_ws(websocket: WebSocket) -> None:
         async def sender() -> None:
             while True:
                 message = await queue.get()
-                html = f'<div class="log-line">{_escape(message)}</div>\n'
-                await websocket.send_text(html)
+                await websocket.send_text(message)
 
         async def receiver() -> None:
             async for data in websocket.iter_text():
@@ -99,29 +98,69 @@ async def _handle_ws_command(
     from pybot.core.bot import PyraBot
 
     assert isinstance(bot, PyraBot)
-    lower = line.lower()
+    lower = line.lower().strip()
+    if not lower.startswith("."):
+        await queue.put(">>> Unknown command. Use .help")
+        return
 
-    if lower.startswith("!say "):
-        parts = line[5:].split(None, 1)
+    cmd, _, _args = lower[1:].partition(" ")
+    raw_args = line[1 + len(cmd) :].strip()
+    is_owner = username.lower() == bot.config.core.owner.lower()
+
+    if cmd == "help":
+        await queue.put(
+            ">>> Commands: .help, .who, .channels, .say <#chan> <msg>, .join <#chan>, "
+            ".part <#chan>, .reload, .restart (owner), .shutdown (owner), "
+            ".raw <line> (owner), .quit"
+        )
+    elif cmd == "who":
+        count = len([s for s in getattr(bot.partyline, "_sessions", []) if s.authenticated])
+        await queue.put(f">>> Connected admins: {count}")
+    elif cmd == "channels":
+        chans = ", ".join(sorted(ch.name for ch in bot.channels.values())) or "(none)"
+        await queue.put(f">>> Channels: {chans}")
+    elif cmd == "say":
+        parts = raw_args.split(None, 1)
         if len(parts) == 2:
             await bot.say(parts[0], parts[1])
             await queue.put(f">>> Sent to {parts[0]}: {parts[1]}")
-
-    elif lower.startswith("!join "):
-        channel = line[6:].strip()
-        await bot.join(channel)
-
-    elif lower.startswith("!part "):
-        channel = line[6:].strip()
-        await bot.part(channel)
-
-    elif lower.startswith("!reload ") and bot.plugin_loader:
-        name = line[8:].strip()
+        else:
+            await queue.put(">>> Usage: .say <#chan> <message>")
+    elif cmd == "join":
+        await bot.join(raw_args)
+        await queue.put(f">>> Joining {raw_args}")
+    elif cmd == "part":
+        await bot.part(raw_args)
+        await queue.put(f">>> Parting {raw_args}")
+    elif cmd == "reload":
         try:
-            await bot.plugin_loader.reload(name)
-            await queue.put(f">>> Plugin '{name}' reloaded.")
+            await bot.reload_runtime()
+            await queue.put(">>> Reloaded config and plugins")
         except Exception as exc:
-            await queue.put(f">>> Error: {exc}")
+            await queue.put(f">>> Reload failed: {exc}")
+    elif cmd == "raw":
+        if not is_owner:
+            await queue.put(">>> Permission denied (owner only)")
+            return
+        await bot.raw(raw_args)
+        await queue.put(f">>> Sent raw: {raw_args}")
+    elif cmd == "shutdown":
+        if not is_owner:
+            await queue.put(">>> Permission denied (owner only)")
+            return
+        await queue.put(">>> Shutting down bot...")
+        await bot.shutdown_process("Shutdown from web console")
+    elif cmd == "restart":
+        if not is_owner:
+            await queue.put(">>> Permission denied (owner only)")
+            return
+        await queue.put(">>> Restarting bot...")
+        await bot.restart_process()
+    elif cmd == "quit":
+        await queue.put(">>> Session closed")
+        await websocket.close()
+    else:
+        await queue.put(">>> Unknown command. Use .help")
 
 
 def _escape(s: str) -> str:
