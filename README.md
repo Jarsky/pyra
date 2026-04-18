@@ -31,7 +31,7 @@
 
 ## Quick Start
 
-### Docker (recommended)
+### Basic Docker (recommended)
 
 ```bash
 git clone https://github.com/Jarsky/pyra.git
@@ -62,7 +62,7 @@ pybot-setup
 pybot --config config/config.yaml
 ```
 
-### Production (PostgreSQL + Docker)
+### Advanced Docker (PostgreSQL + Docker)
 
 ```bash
 cd pyra/docker

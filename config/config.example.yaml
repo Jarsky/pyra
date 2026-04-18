@@ -68,13 +68,13 @@ channels:
 # DATABASE
 # ─────────────────────────────────────────────────────────────
 database:
-  # SQLite (default — suitable for single-server installs):
+  # SQLite (default — suitable for basic installs):
   url: "sqlite+aiosqlite:///data/pyra.db"
 
-  # PostgreSQL (recommended for production):
+  # PostgreSQL (recommended for stability and performance, especially with many plugins/users):
   # url: "postgresql+asyncpg://pyra:password@localhost/pyra"
 
-  # MySQL/MariaDB:
+  # MySQL/MariaDB (alternative to PostgreSQL):
   # url: "mysql+aiomysql://pyra:password@localhost/pyra"
 
 # ─────────────────────────────────────────────────────────────
