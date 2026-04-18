@@ -628,7 +628,7 @@ class PyraBot:
 
         from pybot.core.database import User, get_session
         from pybot.core.permissions import add_owner_bootstrap
-        from pybot.web.auth import hash_password
+        from pybot.web.auth import hash_password, verify_password
 
         async with get_session() as session:
             result = await session.execute(select(User).where(User.nick == owner_nick))
@@ -650,6 +650,10 @@ class PyraBot:
                 user.global_flags = "".join(sorted(set((user.global_flags or "") + "n")))
                 updated = True
             if not user.password_hash:
+                user.password_hash = hash_password(partyline_password)
+                updated = True
+            elif not verify_password(partyline_password, user.password_hash):
+                # Keep config as source-of-truth for first-run/admin bootstrap credentials.
                 user.password_hash = hash_password(partyline_password)
                 updated = True
 
