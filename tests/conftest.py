@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
+import copy
 from pathlib import Path
 
 import pytest
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # Minimal valid config dict for tests
@@ -84,7 +83,7 @@ MINIMAL_CONFIG: dict = {
 
 @pytest.fixture
 def minimal_config_dict() -> dict:
-    return dict(MINIMAL_CONFIG)
+    return copy.deepcopy(MINIMAL_CONFIG)
 
 
 @pytest.fixture

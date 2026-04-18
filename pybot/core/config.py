@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -194,9 +195,15 @@ def load_config(path: Path) -> BotConfig:
         raise ConfigError(f"Failed to parse config YAML: {exc}") from exc
 
     try:
-        return BotConfig.model_validate(raw)
+        config = BotConfig.model_validate(raw)
     except Exception as exc:
         raise ConfigError(f"Invalid configuration: {exc}") from exc
+
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        config.database.url = database_url
+
+    return config
 
 
 def save_config_partial(path: Path, config: BotConfig, updates: dict[str, Any]) -> BotConfig:

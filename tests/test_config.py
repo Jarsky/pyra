@@ -44,7 +44,6 @@ def test_missing_servers(tmp_path: Path) -> None:
 def test_secret_str_not_in_repr(minimal_config_file: Path) -> None:
     config = load_config(minimal_config_file)
     # SecretStr values must not appear in repr/str
-    config_repr = repr(config)
     # sasl_password default is empty — just verify SecretStr type hides it
     assert "**" in repr(config.auth.sasl_password) or "SecretStr" in repr(config.auth.sasl_password)
 
@@ -103,3 +102,13 @@ def test_command_prefix_validation(minimal_config_dict: dict) -> None:
     minimal_config_dict["core"]["command_prefix"] = "toolong!!!!"
     with pytest.raises(Exception):
         BotConfig.model_validate(minimal_config_dict)
+
+
+def test_database_url_env_override(
+    monkeypatch: pytest.MonkeyPatch, minimal_config_file: Path
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://pyra:secret@postgres:5432/pyra")
+
+    config = load_config(minimal_config_file)
+
+    assert config.database.url == "postgresql+asyncpg://pyra:secret@postgres:5432/pyra"
