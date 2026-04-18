@@ -180,6 +180,9 @@ See [docs/permissions.md](docs/permissions.md) for full reference.
 
 The web UI runs on port `8080` by default:
 
+- **Default login** — on first run, owner login is bootstrapped from config:
+  `username = core.owner`, `password = partyline.password`
+
 - **Dashboard** — live uptime, channels, recent logs
 - **Channels** — per-channel settings (greet, antispam, flood control)
 - **Users** — user management, flag assignment
@@ -199,6 +202,9 @@ telnet 127.0.0.1 3333
 # or
 pybot-ctl console
 ```
+
+Login credentials are the same as web by default:
+`username = core.owner`, `password = partyline.password`.
 
 Commands: `!say #chan msg`, `!join #chan`, `!part #chan`, `!reload plugin`, `who`, `channels`, `!raw <irc>` (owner), `shutdown` (owner).
 

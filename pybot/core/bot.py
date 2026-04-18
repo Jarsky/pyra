@@ -565,6 +565,7 @@ class PyraBot:
         from pybot.core.database import init_db
 
         await init_db(self.config.database.url)
+        await self._bootstrap_owner_account()
 
         # Start scheduler
         from pybot.core.scheduler import Scheduler
@@ -607,6 +608,53 @@ class PyraBot:
 
         # Connect to IRC
         await self.irc.run()
+
+    async def _bootstrap_owner_account(self) -> None:
+        """Ensure an owner account exists for partyline/web auth in first-run setups."""
+        owner_nick = self.config.core.owner.strip()
+        partyline_password = self.config.partyline.password.get_secret_value().strip()
+
+        if not owner_nick:
+            logger.warning("core.owner is empty; cannot bootstrap owner login for web/partyline")
+            return
+        if not partyline_password:
+            logger.warning(
+                "partyline.password is empty; set it in config "
+                "to enable initial web/partyline login"
+            )
+            return
+
+        from sqlalchemy import select
+
+        from pybot.core.database import User, get_session
+        from pybot.core.permissions import add_owner_bootstrap
+        from pybot.web.auth import hash_password
+
+        async with get_session() as session:
+            result = await session.execute(select(User).where(User.nick == owner_nick))
+            user = result.scalar_one_or_none()
+
+            if user is None:
+                # Bootstrap a safe default owner hostmask for admin UI + partyline login.
+                await add_owner_bootstrap(
+                    session,
+                    owner_nick,
+                    f"{owner_nick}!*@*",
+                    hash_password(partyline_password),
+                )
+                logger.info(f"Bootstrapped owner login for '{owner_nick}'")
+                return
+
+            updated = False
+            if "n" not in (user.global_flags or ""):
+                user.global_flags = "".join(sorted(set((user.global_flags or "") + "n")))
+                updated = True
+            if not user.password_hash:
+                user.password_hash = hash_password(partyline_password)
+                updated = True
+
+            if updated:
+                logger.info(f"Updated owner account bootstrap data for '{owner_nick}'")
 
     async def _run_web(self) -> None:
         import uvicorn

@@ -150,9 +150,17 @@ def main() -> None:
 
     # Config output path
     _section("Configuration File")
-    config_dir = Path(_prompt("Config directory", "config"))
+    default_config = "/data/config.yaml" if Path("/.dockerenv").exists() else "config/config.yaml"
+    config_input = _prompt("Config file path", default_config).strip()
+    candidate = Path(config_input)
+    if candidate.suffix.lower() in {".yaml", ".yml"}:
+        config_path = candidate
+        config_dir = config_path.parent
+    else:
+        config_dir = candidate
+        config_path = config_dir / "config.yaml"
+
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / "config.yaml"
     if config_path.exists():
         overwrite = _prompt(f"{config_path} already exists. Overwrite? (yes/no)", "no")
         if overwrite.lower() not in ("yes", "y"):
@@ -204,10 +212,11 @@ def main() -> None:
             "url"
         ] = f"postgresql+asyncpg://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     else:
-        data_dir = Path(_prompt("Data directory (for SQLite + logs)", "data"))
+        default_data_dir = "/data" if Path("/.dockerenv").exists() else "data"
+        data_dir = Path(_prompt("Data directory (for SQLite + logs)", default_data_dir))
         data_dir.mkdir(parents=True, exist_ok=True)
         cfg["database"]["url"] = f"sqlite+aiosqlite:///{data_dir}/pyra.db"
-        cfg["logging"]["file"] = str(data_dir / "pyra.log")
+        cfg["core"]["log_file"] = str(data_dir / "pyra.log")
 
     # Web UI
     _section("Web Interface")
