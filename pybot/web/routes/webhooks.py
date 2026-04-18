@@ -52,6 +52,7 @@ async def webhook_sonarr(request: Request) -> dict:
 
     try:
         from arrnotify import fmt_sonarr  # type: ignore[import]
+
         msg = fmt_sonarr(payload)
     except ImportError:
         return {"status": "arrnotify plugin not loaded"}
@@ -82,6 +83,7 @@ async def webhook_radarr(request: Request) -> dict:
 
     try:
         from arrnotify import fmt_radarr  # type: ignore[import]
+
         msg = fmt_radarr(payload)
     except ImportError:
         return {"status": "arrnotify plugin not loaded"}
@@ -113,6 +115,7 @@ async def webhook_tautulli(request: Request) -> dict:
 
     try:
         from arrnotify import fmt_tautulli  # type: ignore[import]
+
         msg = fmt_tautulli(payload)
     except ImportError:
         return {"status": "arrnotify plugin not loaded"}
@@ -132,6 +135,7 @@ async def webhook_plex(request: Request) -> dict:
     if "multipart" in content_type:
         form = await request.form()
         import json
+
         try:
             payload = json.loads(str(form.get("payload", "{}")))
         except Exception:
@@ -147,6 +151,7 @@ async def webhook_plex(request: Request) -> dict:
 
     try:
         from arrnotify import fmt_plex  # type: ignore[import]
+
         msg = fmt_plex(payload)
     except ImportError:
         return {"status": "arrnotify plugin not loaded"}
@@ -178,6 +183,7 @@ async def webhook_overseerr(request: Request) -> dict:
 
     try:
         from arrnotify import fmt_overseerr  # type: ignore[import]
+
         msg = fmt_overseerr(payload, source="Overseerr")
     except ImportError:
         return {"status": "arrnotify plugin not loaded"}
@@ -209,6 +215,7 @@ async def webhook_jellyseerr(request: Request) -> dict:
 
     try:
         from arrnotify import fmt_overseerr  # type: ignore[import]
+
         msg = fmt_overseerr(payload, source="Jellyseerr")
     except ImportError:
         return {"status": "arrnotify plugin not loaded"}

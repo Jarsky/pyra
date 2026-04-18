@@ -57,9 +57,9 @@ async def karma_listener(bot: object, trigger: Trigger) -> None:
 
     async with get_session() as session:
         for nick_lower, delta in changes.items():
-            row = (await session.execute(
-                select(Karma).where(Karma.nick == nick_lower)
-            )).scalar_one_or_none()
+            row = (
+                await session.execute(select(Karma).where(Karma.nick == nick_lower))
+            ).scalar_one_or_none()
             if row is None:
                 row = Karma(nick=nick_lower, score=0, given_up=0, given_down=0)
                 session.add(row)
@@ -72,8 +72,7 @@ async def karma_listener(bot: object, trigger: Trigger) -> None:
             score = row.score
             sign = "+" if delta > 0 else ""
             await bot.say(  # type: ignore[attr-defined]
-                trigger.channel or trigger.nick,
-                f"{nick_lower} karma: {score:+d} ({sign}{delta})"
+                trigger.channel or trigger.nick, f"{nick_lower} karma: {score:+d} ({sign}{delta})"
             )
 
 
@@ -92,9 +91,9 @@ async def cmd_karma(bot: object, trigger: Trigger) -> None:
     if not trigger.args:
         nick = trigger.nick.lower()
         async with get_session() as session:
-            row = (await session.execute(
-                select(Karma).where(Karma.nick == nick)
-            )).scalar_one_or_none()
+            row = (
+                await session.execute(select(Karma).where(Karma.nick == nick))
+            ).scalar_one_or_none()
         score = row.score if row else 0
         await bot.say(target, f"{nick} has karma {score:+d}")  # type: ignore[attr-defined]
         return
