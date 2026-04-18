@@ -88,7 +88,6 @@ async def _note_add(bot: object, trigger: Trigger, content: str) -> None:
 
 async def _note_list(bot: object, trigger: Trigger) -> None:
     from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
 
     from pybot.core.database import Note, User, get_session
 

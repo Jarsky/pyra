@@ -42,7 +42,7 @@ def main() -> None:
 
     # Phase 1+: actual bot startup
     try:
-        from pybot.core.config import ConfigError, load_config
+        from pybot.core.config import load_config
 
         config = load_config(args.config)
     except ImportError:

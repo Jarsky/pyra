@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 

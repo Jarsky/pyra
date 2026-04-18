@@ -33,7 +33,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pybot.core.database import User, UserFlag
 
-
 # ---------------------------------------------------------------------------
 # Hostmask matching
 # ---------------------------------------------------------------------------
@@ -136,8 +135,9 @@ async def is_ignored(
 ) -> bool:
     """Return True if this hostmask should be completely ignored."""
     # Check the Ignore table first
-    from pybot.core.database import Ignore
     from datetime import datetime, timezone
+
+    from pybot.core.database import Ignore
 
     result = await session.execute(
         select(Ignore).where(Ignore.active == True)  # noqa: E712

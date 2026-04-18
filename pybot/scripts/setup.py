@@ -9,7 +9,6 @@ from pathlib import Path
 
 import yaml
 
-
 CONFIG_TEMPLATE = {
     "core": {
         "nick": "",
@@ -43,7 +42,7 @@ CONFIG_TEMPLATE = {
     },
     "web": {
         "enabled": True,
-        "host": "0.0.0.0",
+        "host": "0.0.0.0",  # noqa: S104
         "port": 8080,
         "secret_key": "",
     },
@@ -91,10 +90,13 @@ def _generate_secret_key() -> str:
     return secrets.token_hex(32)
 
 
-async def _init_db_and_owner(config_path: Path, owner_nick: str, owner_host: str, owner_password: str) -> None:
+async def _init_db_and_owner(
+    config_path: Path, owner_nick: str, owner_host: str, owner_password: str
+) -> None:
     import bcrypt
+
     from pybot.core.config import load_config
-    from pybot.core.database import init_db, get_session
+    from pybot.core.database import get_session, init_db
     from pybot.core.permissions import add_owner_bootstrap
 
     config = load_config(config_path)
@@ -125,10 +127,10 @@ WantedBy=multi-user.target
     unit_path = config_path.parent / "pyra.service"
     unit_path.write_text(unit)
     print(f"\n  Systemd unit written to: {unit_path}")
-    print(f"  To install:")
+    print("  To install:")
     print(f"    sudo cp {unit_path} /etc/systemd/system/")
-    print(f"    sudo systemctl daemon-reload")
-    print(f"    sudo systemctl enable --now pyra")
+    print("    sudo systemctl daemon-reload")
+    print("    sudo systemctl enable --now pyra")
 
 
 def main() -> None:

@@ -19,9 +19,9 @@ async def users_list(
     page: int = 1,
 ) -> HTMLResponse:
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     from pybot.core.database import User, get_session
-    from sqlalchemy.orm import selectinload
 
     limit = 25
     offset = (page - 1) * limit
@@ -76,11 +76,13 @@ async def update_flags(
             if action == "add":
                 await add_flag(session, admin_user.hostmask, target_user.hostmask, flag, channel=ch)
             elif action == "remove":
-                await remove_flag(session, admin_user.hostmask, target_user.hostmask, flag, channel=ch)
+                await remove_flag(
+                    session, admin_user.hostmask, target_user.hostmask, flag, channel=ch
+                )
         except PermissionError:
             pass
 
-    return RedirectResponse(url=f"/users?page=1", status_code=303)
+    return RedirectResponse(url="/users?page=1", status_code=303)
 
 
 @router.post("/{user_id}/delete")

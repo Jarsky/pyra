@@ -83,7 +83,6 @@ async def _deliver_tells(bot: object, nick: str, channel: str) -> None:
 
         now = datetime.now(tz=timezone.utc)
         for tell in tells:
-            from seen import _format_age  # local import to avoid circular
 
             try:
                 from pybot.plugins.seen import _format_age as fmt_age

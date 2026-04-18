@@ -44,11 +44,11 @@ The `DATABASE_URL` is set automatically via docker-compose environment variables
 
 ---
 
-## Deploying to irc.elements.net.nz
+## Deploying to host.domain
 
 ```bash
 # On remote server
-ssh user@irc.elements.net.nz
+ssh user@host.domain
 
 # Clone repo (first time)
 cd /opt

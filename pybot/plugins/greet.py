@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from collections import defaultdict
 
 from pybot import plugin
 from pybot.plugin import Trigger

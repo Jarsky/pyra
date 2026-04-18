@@ -20,7 +20,7 @@ _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 _SKIP_DOMAINS = {
     "localhost",
     "127.0.0.1",
-    "0.0.0.0",
+    "0.0.0.0",  # noqa: S104
 }
 
 

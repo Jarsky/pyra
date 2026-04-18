@@ -10,7 +10,6 @@ import sys
 import time
 from pathlib import Path
 
-
 DEFAULT_PID_FILE = Path("data/pyra.pid")
 DEFAULT_CONFIG = Path("config/config.yaml")
 DEFAULT_LOG = Path("data/pyra.log")
@@ -173,10 +172,10 @@ def _cmd_console(args: argparse.Namespace) -> int:
 
     if nc:
         print(f"Connecting to partyline at {host}:{port} (nc)...")
-        os.execlp(nc, nc, host, str(port))
+        os.execlp(nc, nc, host, str(port))  # noqa: S606
     elif telnet:
         print(f"Connecting to partyline at {host}:{port} (telnet)...")
-        os.execlp(telnet, telnet, host, str(port))
+        os.execlp(telnet, telnet, host, str(port))  # noqa: S606
     else:
         print(f"Connect manually: telnet {host} {port}")
         print("(Install 'netcat' or 'telnet' for automatic connection)")

@@ -10,8 +10,7 @@ Usage (from plugins):
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -94,7 +93,7 @@ def parse_cron(expr: str) -> tuple[set[int], set[int], set[int], set[int], set[i
 
     ranges = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 6)]
     result = []
-    for i, (fld, (lo, hi)) in enumerate(zip(fields, ranges)):
+    for _i, (fld, (lo, hi)) in enumerate(zip(fields, ranges, strict=True)):
         result.append(_parse_cron_field(fld, lo, hi))
     return tuple(result)  # type: ignore[return-value]
 

@@ -106,7 +106,7 @@ class PartylineConfig(BaseModel):
 
     @model_validator(mode="after")
     def warn_if_exposed(self) -> "PartylineConfig":
-        if self.enabled and self.host == "0.0.0.0":
+        if self.enabled and self.host == "0.0.0.0":  # noqa: S104
             import warnings
 
             warnings.warn(
@@ -119,7 +119,7 @@ class PartylineConfig(BaseModel):
 
 class WebConfig(BaseModel):
     enabled: bool = True
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # noqa: S104
     port: int = 8080
     secret_key: SecretStr = SecretStr("")
     debug: bool = False

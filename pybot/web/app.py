@@ -6,12 +6,12 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, Form, Request, Response, status
+from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from pybot.web.auth import create_access_token, hash_password, verify_password
+from pybot.web.auth import create_access_token, verify_password
 
 if TYPE_CHECKING:
     from pybot.core.bot import PyraBot
@@ -91,13 +91,13 @@ def create_app(bot: "PyraBot") -> FastAPI:
         return response
 
     # Register routers
-    from pybot.web.routes.dashboard import router as dashboard_router
     from pybot.web.routes.channels import router as channels_router
-    from pybot.web.routes.users import router as users_router
-    from pybot.web.routes.plugins import router as plugins_router
-    from pybot.web.routes.logs import router as logs_router
-    from pybot.web.routes.settings import router as settings_router
     from pybot.web.routes.console import router as console_router
+    from pybot.web.routes.dashboard import router as dashboard_router
+    from pybot.web.routes.logs import router as logs_router
+    from pybot.web.routes.plugins import router as plugins_router
+    from pybot.web.routes.settings import router as settings_router
+    from pybot.web.routes.users import router as users_router
 
     app.include_router(dashboard_router)
     app.include_router(channels_router, prefix="/channels")

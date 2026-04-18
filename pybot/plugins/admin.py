@@ -7,6 +7,8 @@ via /msg or from the partyline.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pybot import plugin
 from pybot.plugin import Trigger
 
@@ -201,7 +203,7 @@ async def cmd_ignore(bot: object, trigger: Trigger) -> None:
     if not trigger.args:
         await bot.reply(trigger, "Usage: !ignore <mask> [duration]")  # type: ignore[attr-defined]
         return
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     from pybot.core.database import Ignore, get_session
 
@@ -283,7 +285,7 @@ async def cmd_adduser(bot: object, trigger: Trigger) -> None:
     mask = trigger.args[0]
     flags_str = trigger.args[1]
 
-    from pybot.core.database import User, get_session
+    from pybot.core.database import get_session
     from pybot.core.permissions import add_flag
 
     nick = mask.split("!")[0] if "!" in mask else mask
@@ -366,7 +368,8 @@ async def cmd_whois(bot: object, trigger: Trigger) -> None:
     if user.last_seen:
         await bot.notice(  # type: ignore[attr-defined]
             trigger.nick,
-            f"Last seen: {user.last_seen.strftime('%Y-%m-%d %H:%M UTC')} in {user.last_seen_where or '?'}",
+            f"Last seen: {user.last_seen.strftime('%Y-%m-%d %H:%M UTC')} "
+            f"in {user.last_seen_where or '?'}",
         )
 
 
@@ -400,8 +403,8 @@ async def cmd_services(bot: object, trigger: Trigger) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_duration(s: str) -> "datetime":
-    from datetime import datetime, timedelta, timezone
+def _parse_duration(s: str) -> datetime:
+    from datetime import timedelta, timezone
 
     unit_map = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
     if s[-1].lower() in unit_map:

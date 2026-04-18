@@ -54,7 +54,7 @@ async def reload_plugin(
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.reload(plugin_name)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
     return RedirectResponse(url="/plugins", status_code=303)
 
@@ -69,6 +69,6 @@ async def unload_plugin(
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.unload(plugin_name)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
     return RedirectResponse(url="/plugins", status_code=303)

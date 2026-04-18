@@ -189,7 +189,7 @@ pybot-ctl console            # Connect to partyline
 
 See [docs/deployment.md](docs/deployment.md) for:
 
-- Docker stack on `irc.elements.net.nz`
+- Docker stack on `host.domain`
 - PostgreSQL production setup
 - Systemd service configuration
 - nginx reverse proxy for web UI

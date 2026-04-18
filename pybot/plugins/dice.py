@@ -46,7 +46,7 @@ async def cmd_rand(bot: object, trigger: Trigger) -> None:
         return
     if lo > hi:
         lo, hi = hi, lo
-    result = random.randint(lo, hi)
+    result = random.randint(lo, hi)  # noqa: S311
     await bot.say(trigger.target, f"{trigger.nick}: {result}")  # type: ignore[attr-defined]
 
 
@@ -76,7 +76,7 @@ def _parse_and_roll(expr: str) -> str:
     if num_sides > MAX_SIDES:
         return f"Too many sides (max {MAX_SIDES})."
 
-    rolls = [random.randint(1, num_sides) for _ in range(num_dice)]
+    rolls = [random.randint(1, num_sides) for _ in range(num_dice)]  # noqa: S311
     original_rolls = list(rolls)
 
     if drop_mode and num_dice > 1:

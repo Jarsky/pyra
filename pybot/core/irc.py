@@ -15,9 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
-import hmac
-import logging
 import os
 import re
 import ssl
@@ -26,7 +23,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from loguru import logger
-
 
 # ---------------------------------------------------------------------------
 # IRCMessage — parsed wire representation
@@ -335,8 +331,8 @@ class IRCConnection:
                 await self.quit()
                 self._writer.close()
                 await self._writer.wait_closed()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Error during disconnect: {e}")
 
     async def _connect_and_run(self) -> None:
         server = self._config.primary_server

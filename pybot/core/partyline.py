@@ -8,8 +8,6 @@ and get a real-time stream of IRC events plus a command interface.
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -30,7 +28,7 @@ class PartylineServer:
 
     async def start(self) -> None:
         cfg = self._bot.config.partyline
-        if cfg.host == "0.0.0.0":
+        if cfg.host == "0.0.0.0":  # noqa: S104
             logger.warning(
                 "SECURITY WARNING: Partyline is bound to 0.0.0.0! "
                 "This exposes the admin console to the network. "
@@ -191,7 +189,9 @@ class PartylineSession:
             attempts += 1
             remaining = MAX_LOGIN_ATTEMPTS - attempts
             if remaining > 0:
-                await self.send(f"Invalid credentials. {remaining} attempt(s) remaining.\r\nLogin: ")
+                await self.send(
+                    f"Invalid credentials. {remaining} attempt(s) remaining.\r\nLogin: "
+                )
             else:
                 await self.send("Too many failed attempts. Goodbye.\r\n")
                 return False
@@ -312,7 +312,7 @@ class PartylineSession:
     async def _cmd_channels(self) -> None:
         channels = self._bot.channels
         await self.send(f"Joined channels ({len(channels)}):\r\n")
-        for name, ch in channels.items():
+        for _name, ch in channels.items():
             await self.send(f"  {ch.name} — {len(ch.nicks)} users  {ch.topic[:60]}\r\n")
 
     # ------------------------------------------------------------------
@@ -323,8 +323,8 @@ class PartylineSession:
         try:
             self._writer.write(message.encode("utf-8", errors="replace"))
             await self._writer.drain()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to send to partyline: {e}")
 
 
 # ---------------------------------------------------------------------------

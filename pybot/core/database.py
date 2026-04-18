@@ -15,7 +15,6 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
     Boolean,

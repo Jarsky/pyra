@@ -16,8 +16,7 @@ from types import ModuleType
 
 from loguru import logger
 
-import pybot.plugin as plugin_api
-from pybot.plugin import PluginRegistry, _set_current_plugin, get_registry
+from pybot.plugin import _set_current_plugin, get_registry
 
 
 class PluginLoader:

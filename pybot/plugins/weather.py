@@ -39,9 +39,14 @@ async def cmd_weather(bot: object, trigger: Trigger) -> None:
         location = " ".join(trigger.args)
     else:
         async with get_session() as session:
-            location = await get_plugin_setting(session, "weather", "location", channel=trigger.nick)
+            location = await get_plugin_setting(
+                session, "weather", "location", channel=trigger.nick
+            )
         if not location:
-            await bot.reply(trigger, "Usage: !weather <location> (or !weather set <location> to save).")  # type: ignore[attr-defined]
+            await bot.reply(  # type: ignore[attr-defined]
+                trigger,
+                "Usage: !weather <location> (or !weather set <location> to save)."
+            )
             return
 
     result = await _get_weather(location)
@@ -60,7 +65,9 @@ async def cmd_forecast(bot: object, trigger: Trigger) -> None:
         location = " ".join(trigger.args)
     else:
         async with get_session() as session:
-            location = await get_plugin_setting(session, "weather", "location", channel=trigger.nick)
+            location = await get_plugin_setting(
+                session, "weather", "location", channel=trigger.nick
+            )
         if not location:
             await bot.reply(trigger, "Usage: !forecast <location>")  # type: ignore[attr-defined]
             return
@@ -158,7 +165,7 @@ async def _get_forecast(location: str) -> list[str]:
 
     city = name.split(",")[0].strip()
     lines = [f"\x023-day forecast for {city}\x02:"]
-    for date, hi, lo, code in zip(dates, max_temps, min_temps, codes):
+    for date, hi, lo, code in zip(dates, max_temps, min_temps, codes, strict=True):
         lines.append(
             f"  {date}: {_wmo_description(code)} | Hi: {hi}°C  Lo: {lo}°C"
         )

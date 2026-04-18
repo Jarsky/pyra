@@ -56,7 +56,7 @@ async def cmd_choose(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, "Please provide at least 2 choices separated by | or ,")  # type: ignore[attr-defined]
         return
 
-    choice = random.choice(choices)
+    choice = random.choice(choices)  # noqa: S311
     await bot.say(trigger.target, f"{trigger.nick}: I choose: \x02{choice}\x02")  # type: ignore[attr-defined]
 
 
@@ -69,5 +69,5 @@ async def cmd_8ball(bot: object, trigger: Trigger) -> None:
     if not trigger.args:
         await bot.reply(trigger, "Ask me a yes/no question!")  # type: ignore[attr-defined]
         return
-    response = random.choice(_8BALL_RESPONSES)
+    response = random.choice(_8BALL_RESPONSES)  # noqa: S311
     await bot.say(trigger.target, f"\U0001f3b1 {trigger.nick}: {response}")  # type: ignore[attr-defined]

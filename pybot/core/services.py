@@ -23,7 +23,8 @@ class ServicesInterface:
         self._pending_status: dict[str, asyncio.Future[int]] = {}
 
     async def nickserv_status(self, nick: str) -> int:
-        """Return NickServ STATUS for nick (0-3): 0=unknown, 1=unidentified, 2=identified, 3=owner."""
+        """Return NickServ STATUS for nick (0-3): 0=unknown, 1=unidentified,
+        2=identified, 3=owner."""
         loop = asyncio.get_event_loop()
         fut: asyncio.Future[int] = loop.create_future()
         self._pending_status[nick.lower()] = fut

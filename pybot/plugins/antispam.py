@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict, deque
-from datetime import datetime, timezone
 from typing import Deque
 
 from pybot import plugin
@@ -51,12 +50,28 @@ async def _on_privmsg(bot: object, trigger: Trigger) -> None:
     from pybot.core.database import get_channel_setting, get_session
 
     async with get_session() as session:
-        rate = int(await get_channel_setting(session, trigger.channel, "flood_lines", str(_DEFAULT_RATE)))
-        window = int(await get_channel_setting(session, trigger.channel, "flood_seconds", str(_DEFAULT_WINDOW)))
+        rate = int(
+            await get_channel_setting(
+                session, trigger.channel, "flood_lines", str(_DEFAULT_RATE)
+            )
+        )
+        window = int(
+            await get_channel_setting(
+                session, trigger.channel, "flood_seconds", str(_DEFAULT_WINDOW)
+            )
+        )
         action = await get_channel_setting(session, trigger.channel, "flood_action", "kick")
         antispam_on = await get_channel_setting(session, trigger.channel, "antispam", "true")
-        caps_pct = int(await get_channel_setting(session, trigger.channel, "caps_pct", str(_DEFAULT_CAPS_PCT)))
-        repeat_limit = int(await get_channel_setting(session, trigger.channel, "repeat_count", str(_DEFAULT_REPEAT)))
+        caps_pct = int(
+            await get_channel_setting(
+                session, trigger.channel, "caps_pct", str(_DEFAULT_CAPS_PCT)
+            )
+        )
+        repeat_limit = int(
+            await get_channel_setting(
+                session, trigger.channel, "repeat_count", str(_DEFAULT_REPEAT)
+            )
+        )
 
     if antispam_on.lower() not in ("true", "1", "yes", "on"):
         return

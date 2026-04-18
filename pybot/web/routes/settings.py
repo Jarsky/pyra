@@ -46,8 +46,6 @@ async def save_settings(
     username: str = Depends(get_current_user),
     config_yaml: str = Form(...),
 ) -> RedirectResponse:
-    bot = request.app.state.bot
-
     # Require owner flag
     from sqlalchemy import select
 

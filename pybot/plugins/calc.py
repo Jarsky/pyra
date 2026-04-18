@@ -19,9 +19,9 @@ async def cmd_calc(bot: object, trigger: Trigger) -> None:
 
 def _evaluate(expr: str) -> str:
     try:
-        from simpleeval import EvalWithCompoundTypes, SimpleEval
-
         import math
+
+        from simpleeval import SimpleEval
 
         evaluator = SimpleEval()
         evaluator.names.update(
