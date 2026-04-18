@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -35,6 +36,15 @@ def setup_logging(config: "BotConfig") -> None:
         from pathlib import Path
 
         log_path = Path(config.core.log_file)
+        if not log_path.is_absolute():
+            # In containers DATA_DIR is typically /data; map relative paths there.
+            data_dir = Path(os.environ.get("DATA_DIR", "data"))
+            if log_path.parts and log_path.parts[0] == "data":
+                remainder = Path(*log_path.parts[1:]) if len(log_path.parts) > 1 else Path()
+                log_path = data_dir / remainder
+            else:
+                log_path = data_dir / log_path
+
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         logger.add(
