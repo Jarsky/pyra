@@ -39,6 +39,22 @@
       flex-shrink: 0;
     }
     .sidebar h3 { margin-bottom: 1rem; color: var(--primary); }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      text-decoration: none;
+      color: var(--primary);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .brand img {
+      width: 2.15rem;
+      height: 2.15rem;
+      object-fit: contain;
+      filter: drop-shadow(0 0 8px rgba(73, 219, 162, 0.25));
+    }
     .sidebar nav a {
       display: block;
       padding: 0.4rem 0.6rem;
@@ -119,7 +135,10 @@
 </head>
 <body>
 <aside class="sidebar">
-  <h3>🔥 Pyra</h3>
+  <a href="/" class="brand" aria-label="Pyra home">
+    <img src="/static/pyra-logo.png" alt="Pyra logo">
+    <span>Pyra</span>
+  </a>
   <nav>
     <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>Dashboard</a>
     <a href="/channels" {% if request.url.path.startswith('/channels') %}class="active"{% endif %}>Channels</a>
