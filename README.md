@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A powerful, extensible, and production-ready IRC bot built with modern Python.</b><br>
-  Inspired by Sopel and Eggdrop. Built with asyncio, FastAPI, SQLAlchemy, and HTMX.
+  Built with asyncio, FastAPI, SQLAlchemy, and HTMX.
 </p>
 
 ![CI](https://img.shields.io/github/actions/workflow/status/Jarsky/pyra/ci.yml?branch=main)

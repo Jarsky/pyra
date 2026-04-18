@@ -23,17 +23,17 @@
     <header><strong>Topic</strong></header>
     <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
       <input type="hidden" name="action" value="topic">
-      <input type="text" name="topic" placeholder="New topic" {% if not can_moderate %}disabled{% endif %}>
+      <input type="text" name="topic" placeholder="New topic" value="{{ topic }}" {% if not can_moderate %}disabled{% endif %}>
       <button type="submit" {% if not can_moderate %}disabled{% endif %}>Set Topic</button>
     </form>
   </article>
 
   <article>
-    <header><strong>Modes</strong></header>
+    <header><strong>Channel Modes</strong></header>
     <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
       <input type="hidden" name="action" value="mode">
       <div class="grid">
-        <input type="text" name="mode" placeholder="e.g. +m or +o" {% if not can_moderate %}disabled{% endif %}>
+        <input type="text" name="mode" placeholder="e.g. +m or +o" value="{{ modes }}" {% if not can_moderate %}disabled{% endif %}>
         <input type="text" name="mode_args" placeholder="args (optional)" {% if not can_moderate %}disabled{% endif %}>
       </div>
       <button type="submit" {% if not can_moderate %}disabled{% endif %}>Apply Mode</button>
@@ -45,48 +45,86 @@
   </article>
 </div>
 
-<div class="grid">
-  <article>
-    <header><strong>Kick User</strong></header>
-    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
-      <input type="hidden" name="action" value="kick">
-      <div class="grid">
-        <input type="text" name="nick" placeholder="nick" {% if not can_moderate %}disabled{% endif %}>
-        <input type="text" name="reason" placeholder="reason (optional)" {% if not can_moderate %}disabled{% endif %}>
-      </div>
-      <button type="submit" {% if not can_moderate %}disabled{% endif %}>Kick</button>
-    </form>
-  </article>
-
-  <article>
-    <header><strong>Ban / Unban</strong></header>
-    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
-      <input type="hidden" name="action" value="ban">
-      <input type="text" name="hostmask" placeholder="*!*@example.net" {% if not can_moderate %}disabled{% endif %}>
-      <button type="submit" {% if not can_moderate %}disabled{% endif %}>Ban</button>
-    </form>
-    <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action" style="margin-top:0.6rem">
-      <input type="hidden" name="action" value="unban">
-      <input type="text" name="hostmask" placeholder="*!*@example.net" {% if not can_moderate %}disabled{% endif %}>
-      <button type="submit" class="secondary" {% if not can_moderate %}disabled{% endif %}>Unban</button>
-    </form>
-  </article>
-</div>
-
 <article>
   <header><strong>Users In Channel</strong></header>
   {% if users %}
-  <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-    {% for u in users %}
-    <span style="padding:0.15rem 0.45rem;border-radius:999px;background:var(--card-background-color);border:1px solid var(--muted-border-color)">
-      {% if 'o' in u.modes %}@{% elif 'v' in u.modes %}+{% endif %}{{ u.nick }}
-    </span>
-    {% endfor %}
-  </div>
+  <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
+    <input type="hidden" name="action" value="kick">
+    <fieldset>
+      <legend>Select users to kick:</legend>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.5rem;margin-bottom:1rem;">
+        {% for u in users %}
+        <label style="margin:0">
+          <input type="checkbox" name="selected_nicks" value="{{ u.nick }}" {% if not can_moderate %}disabled{% endif %}>
+          {% if 'o' in u.modes %}@{% elif 'v' in u.modes %}+{% endif %}{{ u.nick }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <input type="text" name="reason" placeholder="Kick reason (optional)" {% if not can_moderate %}disabled{% endif %}>
+    <button type="submit" {% if not can_moderate %}disabled{% endif %}>Kick Selected</button>
+  </form>
   {% else %}
   <p>No tracked users in this channel yet.</p>
   {% endif %}
 </article>
+
+<article>
+  <header><strong>Ban Users</strong></header>
+  {% if users %}
+  <p><small>Ban patterns: <code>nick!*@*</code>, <code>*!user@*</code>, <code>*!*@host</code>, <code>*!*@*.domain.com</code></small></p>
+  <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
+    <input type="hidden" name="action" value="ban">
+    <fieldset>
+      <legend>Select users to ban (creates mask from their hostmask):</legend>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.5rem;margin-bottom:1rem;">
+        {% for u in users %}
+        <label style="margin:0;font-size:0.9rem">
+          <input type="checkbox" name="selected_hostmasks" value="{{ u.nick }}!*@*" {% if not can_moderate %}disabled{% endif %}>
+          {% if 'o' in u.modes %}@{% elif 'v' in u.modes %}+{% endif %}{{ u.nick }} ({{ u.nick }}!*@*)
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <input type="text" name="ban_reason" placeholder="Ban reason (optional, posted to channel)" {% if not can_moderate %}disabled{% endif %}>
+    <button type="submit" {% if not can_moderate %}disabled{% endif %}>Ban Selected</button>
+  </form>
+
+  <hr style="margin:1rem 0">
+
+  <label>Or enter custom ban mask:
+    <input type="text" name="hostmask" placeholder="*!*@example.net" {% if not can_moderate %}disabled{% endif %}>
+  </label>
+  <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action" style="margin-top:0.5rem">
+    <input type="hidden" name="action" value="ban">
+    <input type="text" name="hostmask" placeholder="*!*@example.net" {% if not can_moderate %}disabled{% endif %}>
+    <button type="submit" {% if not can_moderate %}disabled{% endif %}>Ban</button>
+  </form>
+  {% else %}
+  <p>No tracked users in this channel yet.</p>
+  {% endif %}
+</article>
+
+{% if bans %}
+<article>
+  <header><strong>Active Ban List</strong></header>
+  <form method="post" action="/channels/{{ channel_name|replace('#', '%23') }}/admin/action">
+    <input type="hidden" name="action" value="unban">
+    <fieldset>
+      <legend>Select bans to remove:</legend>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.5rem;margin-bottom:1rem;">
+        {% for ban in bans %}
+        <label style="margin:0;font-size:0.9rem;word-break:break-all">
+          <input type="checkbox" name="unban_selected" value="{{ ban }}" {% if not can_moderate %}disabled{% endif %}>
+          {{ ban }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <button type="submit" {% if not can_moderate %}disabled{% endif %}>Unban Selected</button>
+  </form>
+</article>
+{% endif %}
 
 <p><a href="/channels" role="button" class="secondary outline">Back to Channels</a></p>
 {% endblock %}

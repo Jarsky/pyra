@@ -52,6 +52,7 @@ class ChannelState:
     topic: str = ""
     modes: str = ""
     nicks: dict[str, NickState] = field(default_factory=dict)  # lowercased nick key
+    bans: set[str] = field(default_factory=set)  # ban masks
 
     def get_nick(self, nick: str) -> NickState | None:
         return self.nicks.get(nick.lower())

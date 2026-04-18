@@ -6,11 +6,23 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.datastructures import FormData
 
 from pybot.web.app import templates
 from pybot.web.auth import get_current_user
 
 router = APIRouter()
+
+
+def get_form_str(form: FormData, key: str, default: str = "") -> str:
+    """Safely extract and convert form field to string."""
+    val = form.get(key)
+    if val is None:
+        return default
+    if isinstance(val, str):
+        return val.strip()
+    # UploadFile case - convert to string representation
+    return str(val).strip()
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -114,6 +126,10 @@ async def channel_admin(
             key=lambda ns: ("o" not in ns.modes, "v" not in ns.modes, ns.nick.lower()),
         )
 
+    topic = channel.topic if channel else ""
+    modes = channel.modes if channel else ""
+    bans = sorted(channel.bans) if channel else []
+
     return templates.TemplateResponse(
         request,
         "channel_admin.html",
@@ -125,6 +141,9 @@ async def channel_admin(
             "users": users,
             "can_moderate": can_moderate,
             "bot_nick": bot.nick,
+            "topic": topic,
+            "modes": modes,
+            "bans": bans,
         },
     )
 
@@ -143,27 +162,50 @@ async def channel_admin_action(
     can_moderate = bool(bot_nick_state and "o" in bot_nick_state.modes)
 
     if action == "topic":
-        topic = str(form.get("topic", "")).strip()
+        topic = get_form_str(form, "topic")
         if can_moderate and topic:
             await bot.topic(channel_name, topic)
     elif action == "mode":
-        mode_str = str(form.get("mode", "")).strip()
-        mode_args = str(form.get("mode_args", "")).strip().split()
+        mode_str = get_form_str(form, "mode")
+        mode_args_raw = get_form_str(form, "mode_args")
+        mode_args = mode_args_raw.split() if mode_args_raw else []
         if can_moderate and mode_str:
             await bot.mode(channel_name, mode_str, *mode_args)
     elif action == "kick":
-        nick = str(form.get("nick", "")).strip()
-        reason = str(form.get("reason", "")).strip()
-        if can_moderate and nick:
-            await bot.kick(channel_name, nick, reason)
+        nicks = form.getlist("selected_nicks")
+        if not nicks:
+            nick = get_form_str(form, "nick")  # type: ignore[assignment]
+            nicks = [nick] if nick else []
+        reason = get_form_str(form, "reason")  # type: ignore[assignment]
+        if can_moderate and nicks:
+            for nick in nicks:
+                nick_str = nick if isinstance(nick, str) else str(nick)
+                await bot.kick(channel_name, nick_str.strip(), reason)
     elif action == "ban":
-        hostmask = str(form.get("hostmask", "")).strip()
-        if can_moderate and hostmask:
-            await bot.ban(channel_name, hostmask)
+        hostmasks = form.getlist("selected_hostmasks")
+        reason = get_form_str(form, "ban_reason")  # type: ignore[assignment]
+        if not hostmasks:
+            hostmask = get_form_str(form, "hostmask")  # type: ignore[assignment]
+            hostmasks = [hostmask] if hostmask else []
+        if can_moderate and hostmasks:
+            for hostmask in hostmasks:
+                hm = hostmask if isinstance(hostmask, str) else str(hostmask)
+                hm = hm.strip()
+                if hm:
+                    await bot.ban(channel_name, hm)
+                    if reason:
+                        await bot.say(channel_name, f"Banned {hm} - {reason}")
     elif action == "unban":
-        hostmask = str(form.get("hostmask", "")).strip()
-        if can_moderate and hostmask:
-            await bot.unban(channel_name, hostmask)
+        hostmasks = form.getlist("unban_selected")
+        if not hostmasks:
+            hostmask = get_form_str(form, "hostmask")  # type: ignore[assignment]
+            hostmasks = [hostmask] if hostmask else []
+        if can_moderate and hostmasks:
+            for hostmask in hostmasks:
+                hm = hostmask if isinstance(hostmask, str) else str(hostmask)
+                hm = hm.strip()
+                if hm:
+                    await bot.unban(channel_name, hm)
     elif action == "banlist":
         if can_moderate:
             await bot.mode(channel_name, "+b")
