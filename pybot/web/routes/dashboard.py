@@ -88,14 +88,17 @@ async def dashboard_control(
     if username.lower() != bot.config.core.owner.lower():
         return RedirectResponse(url="/?error=owner_required", status_code=303)
 
-    if action == "reload":
-        await bot.reload_runtime()
-        return RedirectResponse(url="/?saved=reload", status_code=303)
-    if action == "restart":
-        await bot.restart_process()
-        return RedirectResponse(url="/", status_code=303)
-    if action == "shutdown":
-        await bot.shutdown_process("Shutdown from dashboard")
-        return RedirectResponse(url="/", status_code=303)
+    try:
+        if action == "reload":
+            await bot.reload_runtime()
+            return RedirectResponse(url="/?saved=reload", status_code=303)
+        if action == "restart":
+            await bot.restart_process()
+            return RedirectResponse(url="/", status_code=303)
+        if action == "shutdown":
+            await bot.shutdown_process("Shutdown from dashboard")
+            return RedirectResponse(url="/", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(url=f"/?error={type(exc).__name__}", status_code=303)
 
     return RedirectResponse(url="/", status_code=303)

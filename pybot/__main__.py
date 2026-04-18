@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def _get_version() -> str:
 
 def main() -> None:
     args = _parse_args()
+    os.environ["CONFIG_FILE"] = str(args.config)
 
     # Phase 1+: actual bot startup
     try:

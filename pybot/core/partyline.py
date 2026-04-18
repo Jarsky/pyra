@@ -8,6 +8,8 @@ and get a real-time stream of IRC events plus a command interface.
 from __future__ import annotations
 
 import asyncio
+import inspect
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -250,90 +252,17 @@ class PartylineSession:
             await self._server.broadcast(f"[partyline] <{self.nick}> {message}")
             return
 
-        # Commands
-        lower = line.lower().strip()
-        if not lower.startswith("."):
-            await self.send("Unknown command. Use .help\r\n")
-            return
-
-        cmd, _, argline = lower[1:].partition(" ")
-        raw_args = line[1 + len(cmd) :].strip()
-
-        if cmd == "quit":
-            await self.send("Goodbye!\r\n")
-            self._writer.close()
-
-        elif cmd == "help":
-            await self.send(
-                "Commands:\r\n"
-                "  .help\r\n"
-                "  .who\r\n"
-                "  .channels\r\n"
-                "  .say <#chan> <message>\r\n"
-                "  .join <#chan>\r\n"
-                "  .part <#chan>\r\n"
-                "  .reload               (reload config + all plugins)\r\n"
-                "  .restart              (owner only)\r\n"
-                "  .shutdown             (owner only)\r\n"
-                "  .raw <line>           (owner only)\r\n"
-                "  .quit\r\n"
-            )
-
-        elif cmd == "who":
-            await self._cmd_who()
-
-        elif cmd == "channels":
-            await self._cmd_channels()
-
-        elif cmd == "say":
-            parts = raw_args.split(None, 1)
-            if len(parts) == 2:
-                await self._bot.say(parts[0], parts[1])
-                await self.send(f"Said to {parts[0]}: {parts[1]}\r\n")
-            else:
-                await self.send("Usage: .say <#chan> <message>\r\n")
-
-        elif cmd == "join":
-            channel = raw_args.strip()
-            await self._bot.join(channel)
-            await self.send(f"Joining {channel}...\r\n")
-
-        elif cmd == "part":
-            channel = raw_args.strip()
-            await self._bot.part(channel)
-            await self.send(f"Parting {channel}...\r\n")
-
-        elif cmd == "reload":
-            try:
-                await self._bot.reload_runtime()
-                await self.send("Reloaded config and all plugins.\r\n")
-            except Exception as exc:
-                await self.send(f"Reload error: {exc}\r\n")
-
-        elif cmd == "raw":
-            if not self._is_owner():
-                await self.send("Permission denied (owner only).\r\n")
-                return
-            raw_line = raw_args.strip()
-            await self._bot.raw(raw_line)
-            await self.send(f"Sent: {raw_line}\r\n")
-
-        elif cmd == "shutdown":
-            if not self._is_owner():
-                await self.send("Permission denied (owner only).\r\n")
-                return
-            await self.send("Shutting down bot...\r\n")
-            await self._bot.shutdown_process("Shutdown by partyline admin")
-
-        elif cmd == "restart":
-            if not self._is_owner():
-                await self.send("Permission denied (owner only).\r\n")
-                return
-            await self.send("Restarting bot...\r\n")
-            await self._bot.restart_process()
-
-        else:
-            await self.send("Unknown command. Use .help\r\n")
+        await execute_partyline_command(
+            bot=self._bot,
+            actor=self.nick or "",
+            line=line,
+            send=self.send,
+            is_owner=self._is_owner(),
+            admin_count=lambda: len([s for s in self._server._sessions if s.authenticated]),
+            channel_names=lambda: sorted(ch.name for ch in self._bot.channels.values()),
+            close=self._writer.close,
+            line_ending="\r\n",
+        )
 
     def _is_owner(self) -> bool:
         return bool(self.nick and self.nick.lower() == self._bot.config.core.owner.lower())
@@ -397,3 +326,111 @@ def _format_irc_event(msg: "IRCMessage") -> str | None:
         channel = msg.params[0] if msg.params else "?"
         return f"*** {msg.nick} changed topic of {channel}: {msg.text}"
     return None
+
+
+async def execute_partyline_command(
+    *,
+    bot: "PyraBot",
+    actor: str,
+    line: str,
+    send: Callable[[str], Awaitable[None]],
+    is_owner: bool,
+    admin_count: Callable[[], int],
+    channel_names: Callable[[], list[str]],
+    close: Callable[[], None | Awaitable[None]] | None = None,
+    line_ending: str = "\n",
+) -> None:
+    lower = line.lower().strip()
+    if not lower.startswith("."):
+        await send(f"Unknown command. Use .help{line_ending}")
+        return
+
+    cmd, _, _ = lower[1:].partition(" ")
+    raw_args = line[1 + len(cmd) :].strip()
+
+    if cmd == "quit":
+        await send(f"Goodbye!{line_ending}")
+        if close is not None:
+            close_result = close()
+            if inspect.isawaitable(close_result):
+                await close_result
+        return
+
+    if cmd == "help":
+        await send(
+            "Commands:" + line_ending
+            + "  .help" + line_ending
+            + "  .who" + line_ending
+            + "  .channels" + line_ending
+            + "  .say <#chan> <message>" + line_ending
+            + "  .join <#chan>" + line_ending
+            + "  .part <#chan>" + line_ending
+            + "  .reload               (reload config + all plugins)" + line_ending
+            + "  .restart              (owner only)" + line_ending
+            + "  .shutdown             (owner only)" + line_ending
+            + "  .raw <line>           (owner only)" + line_ending
+            + "  .quit" + line_ending
+        )
+        return
+
+    if cmd == "who":
+        await send(f"Connected admins: {admin_count()}{line_ending}")
+        return
+
+    if cmd == "channels":
+        channels = ", ".join(channel_names()) or "(none)"
+        await send(f"Channels: {channels}{line_ending}")
+        return
+
+    if cmd == "say":
+        parts = raw_args.split(None, 1)
+        if len(parts) == 2:
+            await bot.say(parts[0], parts[1])
+            await send(f"Sent to {parts[0]}: {parts[1]}{line_ending}")
+        else:
+            await send(f"Usage: .say <#chan> <message>{line_ending}")
+        return
+
+    if cmd == "join":
+        await bot.join(raw_args)
+        await send(f"Joining {raw_args}...{line_ending}")
+        return
+
+    if cmd == "part":
+        await bot.part(raw_args)
+        await send(f"Parting {raw_args}...{line_ending}")
+        return
+
+    if cmd == "reload":
+        try:
+            await bot.reload_runtime()
+            await send(f"Reloaded config and all plugins.{line_ending}")
+        except Exception as exc:
+            await send(f"Reload error: {exc}{line_ending}")
+        return
+
+    if cmd == "raw":
+        if not is_owner:
+            await send(f"Permission denied (owner only).{line_ending}")
+            return
+        await bot.raw(raw_args)
+        await send(f"Sent: {raw_args}{line_ending}")
+        return
+
+    if cmd == "shutdown":
+        if not is_owner:
+            await send(f"Permission denied (owner only).{line_ending}")
+            return
+        await send(f"Shutting down bot...{line_ending}")
+        await bot.shutdown_process(f"Shutdown by {actor or 'partyline admin'}")
+        return
+
+    if cmd == "restart":
+        if not is_owner:
+            await send(f"Permission denied (owner only).{line_ending}")
+            return
+        await send(f"Restarting bot...{line_ending}")
+        await bot.restart_process()
+        return
+
+    await send(f"Unknown command. Use .help{line_ending}")

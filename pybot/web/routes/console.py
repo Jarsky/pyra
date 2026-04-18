@@ -96,72 +96,22 @@ async def _handle_ws_command(
     queue: asyncio.Queue,
 ) -> None:
     from pybot.core.bot import PyraBot
+    from pybot.core.partyline import execute_partyline_command
 
     assert isinstance(bot, PyraBot)
-    lower = line.lower().strip()
-    if not lower.startswith("."):
-        await queue.put(">>> Unknown command. Use .help")
-        return
 
-    cmd, _, _args = lower[1:].partition(" ")
-    raw_args = line[1 + len(cmd) :].strip()
-    is_owner = username.lower() == bot.config.core.owner.lower()
+    def admin_count() -> int:
+        sessions = getattr(bot.partyline, "_sessions", [])
+        return len([s for s in sessions if s.authenticated])
 
-    if cmd == "help":
-        await queue.put(
-            ">>> Commands: .help, .who, .channels, .say <#chan> <msg>, .join <#chan>, "
-            ".part <#chan>, .reload, .restart (owner), .shutdown (owner), "
-            ".raw <line> (owner), .quit"
-        )
-    elif cmd == "who":
-        count = len([s for s in getattr(bot.partyline, "_sessions", []) if s.authenticated])
-        await queue.put(f">>> Connected admins: {count}")
-    elif cmd == "channels":
-        chans = ", ".join(sorted(ch.name for ch in bot.channels.values())) or "(none)"
-        await queue.put(f">>> Channels: {chans}")
-    elif cmd == "say":
-        parts = raw_args.split(None, 1)
-        if len(parts) == 2:
-            await bot.say(parts[0], parts[1])
-            await queue.put(f">>> Sent to {parts[0]}: {parts[1]}")
-        else:
-            await queue.put(">>> Usage: .say <#chan> <message>")
-    elif cmd == "join":
-        await bot.join(raw_args)
-        await queue.put(f">>> Joining {raw_args}")
-    elif cmd == "part":
-        await bot.part(raw_args)
-        await queue.put(f">>> Parting {raw_args}")
-    elif cmd == "reload":
-        try:
-            await bot.reload_runtime()
-            await queue.put(">>> Reloaded config and plugins")
-        except Exception as exc:
-            await queue.put(f">>> Reload failed: {exc}")
-    elif cmd == "raw":
-        if not is_owner:
-            await queue.put(">>> Permission denied (owner only)")
-            return
-        await bot.raw(raw_args)
-        await queue.put(f">>> Sent raw: {raw_args}")
-    elif cmd == "shutdown":
-        if not is_owner:
-            await queue.put(">>> Permission denied (owner only)")
-            return
-        await queue.put(">>> Shutting down bot...")
-        await bot.shutdown_process("Shutdown from web console")
-    elif cmd == "restart":
-        if not is_owner:
-            await queue.put(">>> Permission denied (owner only)")
-            return
-        await queue.put(">>> Restarting bot...")
-        await bot.restart_process()
-    elif cmd == "quit":
-        await queue.put(">>> Session closed")
-        await websocket.close()
-    else:
-        await queue.put(">>> Unknown command. Use .help")
-
-
-def _escape(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    await execute_partyline_command(
+        bot=bot,
+        actor=username,
+        line=line,
+        send=lambda msg: queue.put(f">>> {msg.rstrip()}"),
+        is_owner=username.lower() == bot.config.core.owner.lower(),
+        admin_count=admin_count,
+        channel_names=lambda: sorted(ch.name for ch in bot.channels.values()),
+        close=websocket.close,
+        line_ending="",
+    )

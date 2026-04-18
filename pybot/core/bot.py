@@ -18,6 +18,8 @@ from pybot.core.config import BotConfig
 from pybot.core.irc import IRCConnection, IRCMessage
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pybot.core.database import AsyncSession
     from pybot.core.partyline import PartylineServer
     from pybot.core.plugin_loader import PluginLoader
@@ -168,11 +170,9 @@ class PyraBot:
 
     async def reload_runtime(self) -> None:
         """Reload config from disk and reload all loaded plugins."""
-        from pathlib import Path
-
         from pybot.core.config import load_config
 
-        config_path = Path(os.environ.get("CONFIG_FILE", "config/config.yaml"))
+        config_path = self._resolve_runtime_config_path()
         new_config = load_config(config_path)
 
         # Keep active runtime config in sync for IRC/web/partyline behavior.
@@ -189,15 +189,26 @@ class PyraBot:
 
     async def restart_process(self) -> None:
         """Restart the current bot process in-place."""
-        from pathlib import Path
-
-        config_path = Path(os.environ.get("CONFIG_FILE", "config/config.yaml"))
+        config_path = self._resolve_runtime_config_path()
         await self._shutdown()
         # Controlled self-reexec for restart functionality.
         os.execv(  # noqa: S606
             sys.executable,
             [sys.executable, "-m", "pybot", "--config", str(config_path)],
         )
+
+    def _resolve_runtime_config_path(self) -> "Path":
+        from pathlib import Path
+
+        configured = os.environ.get("CONFIG_FILE")
+        if configured:
+            return Path(configured)
+
+        docker_default = Path("/data/config.yaml")
+        if docker_default.exists() or Path("/.dockerenv").exists():
+            return docker_default
+
+        return Path("config/config.yaml")
 
     async def raw(self, line: str) -> None:
         await self.irc.send_raw(line)

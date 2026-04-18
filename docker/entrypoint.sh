@@ -4,6 +4,7 @@ set -e
 DATA_DIR="${DATA_DIR:-/data}"
 CONFIG_FILE="${CONFIG_FILE:-${DATA_DIR}/config.yaml}"
 DB_URL="${DATABASE_URL:-sqlite+aiosqlite:///${DATA_DIR}/pyra.db}"
+export CONFIG_FILE
 
 # Bootstrap config.yaml from the bundled example if it doesn't exist yet.
 if [ ! -f "${CONFIG_FILE}" ]; then

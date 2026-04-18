@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -11,10 +12,13 @@ from fastapi.responses import HTMLResponse
 from pybot.web.app import templates
 from pybot.web.auth import get_current_user
 
+if TYPE_CHECKING:
+    from pybot.core.database import Log
+
 router = APIRouter()
 
 
-def _serialize_log_row(log: object) -> str:
+def _serialize_log_row(log: "Log") -> str:
     ts = log.logged_at.strftime("%Y-%m-%d %H:%M:%S") if log.logged_at else "?"
     channel = log.channel or "—"
     message = log.message or ""
