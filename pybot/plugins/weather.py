@@ -1,6 +1,9 @@
 """
 Weather plugin — current conditions and forecast via Open-Meteo (no API key needed).
 Geocoding via Nominatim/OpenStreetMap (also free, no key).
+
+Plugin vars (config.yaml plugins.vars.weather):
+  units: metric | imperial  (default: metric)
 """
 
 from __future__ import annotations
@@ -12,6 +15,10 @@ from pybot.plugin import Trigger
 
 _GEOCODE_URL = "https://nominatim.openstreetmap.org/search"
 _WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+
+
+def _is_imperial(bot: object) -> bool:
+    return bot.plugin_config("weather").get("units", "metric") == "imperial"  # type: ignore[attr-defined]
 
 
 @plugin.command(
@@ -48,7 +55,7 @@ async def cmd_weather(bot: object, trigger: Trigger) -> None:
             )
             return
 
-    result = await _get_weather(location)
+    result = await _get_weather(location, imperial=_is_imperial(bot))
     await bot.say(trigger.target, result)  # type: ignore[attr-defined]
 
 
@@ -71,7 +78,7 @@ async def cmd_forecast(bot: object, trigger: Trigger) -> None:
             await bot.reply(trigger, "Usage: !forecast <location>")  # type: ignore[attr-defined]
             return
 
-    result = await _get_forecast(location)
+    result = await _get_forecast(location, imperial=_is_imperial(bot))
     for line in result:
         await bot.say(trigger.target, line)  # type: ignore[attr-defined]
 
@@ -83,7 +90,7 @@ async def _geocode(location: str) -> tuple[float, float, str] | None:
             resp = await client.get(
                 _GEOCODE_URL,
                 params={"q": location, "format": "json", "limit": 1},
-                headers={"User-Agent": "PyraBot/1.0 (IRC bot; contact jarskynz@gmail.com)"},
+                headers={"User-Agent": "PyraBot/1.0 (IRC bot)"},
             )
             data = resp.json()
         if not data:
@@ -94,11 +101,14 @@ async def _geocode(location: str) -> tuple[float, float, str] | None:
         return None
 
 
-async def _get_weather(location: str) -> str:
+async def _get_weather(location: str, *, imperial: bool = False) -> str:
     geo = await _geocode(location)
     if not geo:
         return f"Could not find location: {location}"
     lat, lon, name = geo
+
+    temp_unit = "fahrenheit" if imperial else "celsius"
+    wind_unit = "mph" if imperial else "kmh"
 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
@@ -108,8 +118,8 @@ async def _get_weather(location: str) -> str:
                     "latitude": lat,
                     "longitude": lon,
                     "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code",
-                    "wind_speed_unit": "kmh",
-                    "temperature_unit": "celsius",
+                    "wind_speed_unit": wind_unit,
+                    "temperature_unit": temp_unit,
                 },
             )
             data = resp.json()
@@ -117,27 +127,31 @@ async def _get_weather(location: str) -> str:
         return f"Weather API error: {exc}"
 
     current = data.get("current", {})
-    temp_c = current.get("temperature_2m", "?")
-    temp_f = round(float(temp_c) * 9 / 5 + 32, 1) if isinstance(temp_c, (int, float)) else "?"
+    temp = current.get("temperature_2m", "?")
+    unit_sym = "°F" if imperial else "°C"
     humidity = current.get("relative_humidity_2m", "?")
     wind = current.get("wind_speed_10m", "?")
+    wind_sym = "mph" if imperial else "km/h"
     code = current.get("weather_code", 0)
     condition = _wmo_description(code)
 
     city = name.split(",")[0].strip()
     return (
         f"\x02{city}\x02: {condition} | "
-        f"Temp: {temp_c}°C / {temp_f}°F | "
+        f"Temp: {temp}{unit_sym} | "
         f"Humidity: {humidity}% | "
-        f"Wind: {wind} km/h"
+        f"Wind: {wind} {wind_sym}"
     )
 
 
-async def _get_forecast(location: str) -> list[str]:
+async def _get_forecast(location: str, *, imperial: bool = False) -> list[str]:
     geo = await _geocode(location)
     if not geo:
         return [f"Could not find location: {location}"]
     lat, lon, name = geo
+
+    temp_unit = "fahrenheit" if imperial else "celsius"
+    unit_sym = "°F" if imperial else "°C"
 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
@@ -148,7 +162,7 @@ async def _get_forecast(location: str) -> list[str]:
                     "longitude": lon,
                     "daily": "temperature_2m_max,temperature_2m_min,weather_code",
                     "forecast_days": 3,
-                    "temperature_unit": "celsius",
+                    "temperature_unit": temp_unit,
                     "timezone": "UTC",
                 },
             )
@@ -165,7 +179,7 @@ async def _get_forecast(location: str) -> list[str]:
     city = name.split(",")[0].strip()
     lines = [f"\x023-day forecast for {city}\x02:"]
     for date, hi, lo, code in zip(dates, max_temps, min_temps, codes, strict=True):
-        lines.append(f"  {date}: {_wmo_description(code)} | Hi: {hi}°C  Lo: {lo}°C")
+        lines.append(f"  {date}: {_wmo_description(code)} | Hi: {hi}{unit_sym}  Lo: {lo}{unit_sym}")
     return lines
 
 

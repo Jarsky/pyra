@@ -114,6 +114,27 @@ plugins:
   disabled: []                   # Plugins to skip even when enabled="all"
   extra_dir: "plugins_extra/"    # Directory for third-party plugins
 
+  # Per-plugin variables — API keys, tokens, and settings.
+  # Access in a plugin with: bot.plugin_config("plugin_name").get("key", "default")
+  # This section is gitignored via config/config.yaml — safe for secrets.
+  vars:
+    weather:
+      # Open-Meteo is free and needs no key. Uncomment if using a different provider:
+      # api_key: ""
+      units: metric                # metric | imperial
+    search:
+      # DuckDuckGo and Wikipedia need no key. For custom/paid providers:
+      # google_api_key: ""
+      # google_cx: ""              # Google Custom Search engine ID
+      max_results: 3
+    url:
+      max_title_length: 200        # Truncate titles longer than this
+      ignore_domains: []           # e.g. ["localhost", "192.168."]
+    # Example third-party plugin:
+    # myplugin:
+    #   api_key: "your-secret-key-here"
+    #   endpoint: "https://api.example.com/v1"
+
 # ─────────────────────────────────────────────────────────────
 # ANOPE SERVICES INTEGRATION (optional)
 # ─────────────────────────────────────────────────────────────

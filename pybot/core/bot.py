@@ -174,6 +174,15 @@ class PyraBot:
         ch = self.get_channel(channel)
         return ch.get_nick(nick) if ch else None
 
+    def plugin_config(self, plugin_name: str) -> dict:
+        """Return the vars dict for a plugin from config.plugins.vars.
+
+        Plugins use this to read API keys and other per-plugin settings
+        without hardcoding them:
+            api_key = bot.plugin_config("weather").get("api_key", "")
+        """
+        return self.config.plugins.vars.get(plugin_name, {})
+
     @property
     def uptime_seconds(self) -> float:
         return time.monotonic() - self.start_time

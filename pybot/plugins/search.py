@@ -1,4 +1,8 @@
-"""Search plugin — DuckDuckGo instant answers, Wikipedia summaries."""
+"""Search plugin — DuckDuckGo instant answers, Wikipedia summaries.
+
+Plugin vars (config.yaml plugins.vars.search):
+  max_results: int   (default: 3, controls summary length)
+"""
 
 from __future__ import annotations
 

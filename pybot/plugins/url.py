@@ -1,4 +1,9 @@
-"""URL plugin — auto-fetch page titles for URLs posted in chat."""
+"""URL plugin — auto-fetch page titles for URLs posted in chat.
+
+Plugin vars (config.yaml plugins.vars.url):
+  max_title_length: int        (default: 200)
+  ignore_domains: list[str]    (default: [])
+"""
 
 from __future__ import annotations
 
@@ -16,12 +21,7 @@ _recent: dict[str, str] = defaultdict(str)
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
-# Domains to skip
-_SKIP_DOMAINS = {
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",  # noqa: S104
-}
+_BASE_SKIP_DOMAINS = {"localhost", "127.0.0.1", "0.0.0.0"}  # noqa: S104
 
 
 @plugin.rule(r"https?://\S+")
@@ -37,17 +37,22 @@ async def url_handler(bot: object, trigger: Trigger) -> None:
     if enabled.lower() not in ("true", "1", "yes", "on"):
         return
 
+    cfg = bot.plugin_config("url")  # type: ignore[attr-defined]
+    max_len = int(cfg.get("max_title_length", 200))
+    skip_domains = _BASE_SKIP_DOMAINS | set(cfg.get("ignore_domains", []))
+
     urls = _URL_RE.findall(trigger.text)
     for url in urls[:3]:  # max 3 per message
         parsed = urlparse(url)
-        if parsed.hostname in _SKIP_DOMAINS:
+        host = parsed.hostname or ""
+        if any(host == d or host.endswith("." + d) for d in skip_domains):
             continue
 
         # Dedup: skip if same URL announced in this channel recently
         if _recent.get(trigger.channel) == url:
             continue
 
-        title = await _fetch_title(url)
+        title = await _fetch_title(url, max_len=max_len)
         if title:
             _recent[trigger.channel] = url
             await bot.say(trigger.channel, f"[ {title} ]")  # type: ignore[attr-defined]
@@ -59,14 +64,16 @@ async def cmd_title(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, "Usage: !title <url>")  # type: ignore[attr-defined]
         return
     url = trigger.args[0]
-    title = await _fetch_title(url)
+    cfg = bot.plugin_config("url")  # type: ignore[attr-defined]
+    max_len = int(cfg.get("max_title_length", 200))
+    title = await _fetch_title(url, max_len=max_len)
     if title:
         await bot.say(trigger.target, f"[ {title} ]")  # type: ignore[attr-defined]
     else:
         await bot.reply(trigger, "Could not fetch title.")  # type: ignore[attr-defined]
 
 
-async def _fetch_title(url: str) -> str | None:
+async def _fetch_title(url: str, *, max_len: int = 200) -> str | None:
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; PyraBot/1.0)",
@@ -83,12 +90,12 @@ async def _fetch_title(url: str) -> str | None:
             # Read up to 64KB
             body = resp.text[:65536]
 
-        return _extract_title(url, body)
+        return _extract_title(url, body, max_len=max_len)
     except Exception:
         return None
 
 
-def _extract_title(url: str, html: str) -> str | None:
+def _extract_title(url: str, html: str, *, max_len: int = 200) -> str | None:
     host = urlparse(url).hostname or ""
 
     # YouTube
@@ -99,7 +106,7 @@ def _extract_title(url: str, html: str) -> str | None:
     m = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE | re.DOTALL)
     if m:
         title = _clean_text(m.group(1))
-        return title[:200] if title else None
+        return title[:max_len] if title else None
     return None
 
 
