@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Protocol
 
 from sqlalchemy import (
     Boolean,
@@ -22,6 +23,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Table,
     Text,
     func,
 )
@@ -39,6 +41,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+class _ModelWithTable(Protocol):
+    __table__: Table
 
 
 async def init_db(url: str, echo: bool = False) -> None:
@@ -62,7 +68,7 @@ async def init_db(url: str, echo: bool = False) -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def ensure_plugin_tables(*model_types: type) -> None:
+async def ensure_plugin_tables(*model_types: type[_ModelWithTable]) -> None:
     """Create tables for plugin-defined models if they don't exist.
 
     Plugins call this from their setup() to auto-create tables on first load.
