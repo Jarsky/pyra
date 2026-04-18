@@ -149,7 +149,7 @@ async def update_seen(nick, channel, message):
         await session.commit()
 ```
 
-Available models: `User`, `UserFlag`, `Channel`, `ChannelSetting`, `Ban`, `Ignore`, `SeenEntry`, `Tell`, `Note`, `PluginSetting`, `Log`, `Reminder`, `ScheduledTask`.
+Available models: `User`, `UserFlag`, `Channel`, `ChannelSetting`, `Ban`, `Ignore`, `SeenEntry`, `Tell`, `Note`, `PluginSetting`, `Log`, `Reminder`, `ScheduledTask`, `Karma`.
 
 Helper functions:
 
@@ -249,6 +249,24 @@ async def setup(bot):
 async def shutdown(bot):
     """Called when plugin is unloaded."""
     bot.memory.pop("my_plugin_cache", None)
+```
+
+### Plugins_extra Database Tables
+
+For `plugins_extra/` plugins that need custom tables, define SQLAlchemy models in the plugin file and create them in `setup()` with `ensure_plugin_tables()`.
+
+Do not add `plugins_extra/` tables to core Alembic migrations.
+
+```python
+from pybot.core.database import Base, ensure_plugin_tables
+from sqlalchemy.orm import Mapped, mapped_column
+
+class MyPluginEntry(Base):
+    __tablename__ = "myplugin_entries"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+async def setup(bot):
+    await ensure_plugin_tables(MyPluginEntry)
 ```
 
 ---
