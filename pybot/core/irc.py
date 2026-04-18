@@ -17,6 +17,7 @@ import asyncio
 import base64
 import os
 import re
+import socket
 import ssl
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -312,7 +313,7 @@ class IRCConnection:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                logger.error(f"IRC connection error: {exc}")
+                logger.warning(self._format_connection_error(exc))
 
             if not self._running:
                 break
@@ -320,6 +321,26 @@ class IRCConnection:
             logger.info(f"Reconnecting in {self._reconnect_delay:.0f}s...")
             await asyncio.sleep(self._reconnect_delay)
             self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
+
+    def _format_connection_error(self, exc: Exception) -> str:
+        """Return a concise, actionable message for expected connection failures."""
+        if isinstance(exc, socket.gaierror):
+            return (
+                f"IRC connection error: cannot resolve host '{self._config.primary_server.host}'. "
+                "Check server.host DNS/name in config."
+            )
+        if isinstance(exc, ConnectionRefusedError):
+            return (
+                f"IRC connection error: connection refused by "
+                f"{self._config.primary_server.host}:{self._config.primary_server.port}. "
+                "Check port/firewall/SSL settings."
+            )
+        if isinstance(exc, ssl.SSLError):
+            return (
+                "IRC connection error: SSL handshake failed. "
+                "Verify server SSL support and the ssl/ssl_verify settings."
+            )
+        return f"IRC connection error: {type(exc).__name__}: {exc}"
 
     async def stop(self) -> None:
         self._running = False

@@ -56,6 +56,9 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["pybot*"]
 
+[tool.setuptools.package-data]
+"pybot.web" = ["templates/*.html", "static/*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

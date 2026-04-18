@@ -57,7 +57,11 @@ class PluginLoader:
             importlib.invalidate_caches()
             pyc_path = Path(importlib.util.cache_from_source(str(path)))
             if pyc_path.exists():
-                pyc_path.unlink()
+                try:
+                    pyc_path.unlink()
+                except PermissionError:
+                    # Site-packages may be read-only in containers running as non-root.
+                    logger.debug(f"Cannot remove bytecode cache (permission denied): {pyc_path}")
 
             spec.loader.exec_module(module)  # type: ignore[union-attr]
 

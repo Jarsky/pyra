@@ -613,16 +613,19 @@ class PyraBot:
 
         from pybot.web.app import create_app
 
-        app = create_app(self)
-        cfg = self.config.web
-        config = uvicorn.Config(
-            app,
-            host=cfg.host,
-            port=cfg.port,
-            log_level="warning",
-        )
-        server = uvicorn.Server(config)
-        await server.serve()
+        try:
+            app = create_app(self)
+            cfg = self.config.web
+            config = uvicorn.Config(
+                app,
+                host=cfg.host,
+                port=cfg.port,
+                log_level="warning",
+            )
+            server = uvicorn.Server(config)
+            await server.serve()
+        except Exception as exc:
+            logger.error(f"Web interface failed to start: {exc}")
 
     async def _shutdown(self) -> None:
         logger.info("Shutting down...")

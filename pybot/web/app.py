@@ -10,6 +10,7 @@ from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from loguru import logger
 
 from pybot.web.auth import create_access_token, verify_password
 
@@ -27,8 +28,10 @@ def create_app(bot: "PyraBot") -> FastAPI:
     app.state.bot = bot
 
     # Static files
-    _STATIC_DIR.mkdir(exist_ok=True)
-    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+    if _STATIC_DIR.exists():
+        app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+    else:
+        logger.warning(f"Static directory not found, skipping /static mount: {_STATIC_DIR}")
 
     # Auth routes
     @app.get("/auth/login", response_class=HTMLResponse)
