@@ -44,8 +44,7 @@ async def cmd_weather(bot: object, trigger: Trigger) -> None:
             )
         if not location:
             await bot.reply(  # type: ignore[attr-defined]
-                trigger,
-                "Usage: !weather <location> (or !weather set <location> to save)."
+                trigger, "Usage: !weather <location> (or !weather set <location> to save)."
             )
             return
 
@@ -166,9 +165,7 @@ async def _get_forecast(location: str) -> list[str]:
     city = name.split(",")[0].strip()
     lines = [f"\x023-day forecast for {city}\x02:"]
     for date, hi, lo, code in zip(dates, max_temps, min_temps, codes, strict=True):
-        lines.append(
-            f"  {date}: {_wmo_description(code)} | Hi: {hi}°C  Lo: {lo}°C"
-        )
+        lines.append(f"  {date}: {_wmo_description(code)} | Hi: {hi}°C  Lo: {lo}°C")
     return lines
 
 

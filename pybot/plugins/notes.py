@@ -119,9 +119,7 @@ async def _note_del(bot: object, trigger: Trigger, note_id: int) -> None:
 
     async with get_session() as session:
         result = await session.execute(
-            select(Note)
-            .join(User)
-            .where(Note.id == note_id, User.nick == trigger.nick)
+            select(Note).join(User).where(Note.id == note_id, User.nick == trigger.nick)
         )
         note = result.scalar_one_or_none()
         if not note:
@@ -139,9 +137,7 @@ async def _note_show(bot: object, trigger: Trigger, note_id: int) -> None:
 
     async with get_session() as session:
         result = await session.execute(
-            select(Note)
-            .join(User)
-            .where(Note.id == note_id, User.nick == trigger.nick)
+            select(Note).join(User).where(Note.id == note_id, User.nick == trigger.nick)
         )
         note = result.scalar_one_or_none()
 

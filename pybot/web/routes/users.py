@@ -29,9 +29,7 @@ async def users_list(
     async with get_session() as session:
         query = select(User).options(selectinload(User.flags))
         if q:
-            query = query.where(
-                User.nick.ilike(f"%{q}%") | User.hostmask.ilike(f"%{q}%")
-            )
+            query = query.where(User.nick.ilike(f"%{q}%") | User.hostmask.ilike(f"%{q}%"))
         query = query.offset(offset).limit(limit)
         result = await session.execute(query)
         users = result.scalars().all()

@@ -57,7 +57,7 @@ def _parse_and_roll(expr: str) -> str:
     dl_match = re.search(r"\s+drop\s+(lowest|highest)", expr, re.IGNORECASE)
     if dl_match:
         drop_mode = dl_match.group(1).lower()
-        expr_clean = expr[:dl_match.start()].strip()
+        expr_clean = expr[: dl_match.start()].strip()
 
     m = _DICE_RE.match(expr_clean.strip())
     if not m:

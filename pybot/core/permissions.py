@@ -95,9 +95,7 @@ async def get_flags(
         flags.update(user.global_flags)
 
         # Per-flag records (both global and channel-specific)
-        result = await session.execute(
-            select(UserFlag).where(UserFlag.user_id == user.id)
-        )
+        result = await session.execute(select(UserFlag).where(UserFlag.user_id == user.id))
         for uf in result.scalars().all():
             if uf.channel is None:
                 flags.add(uf.flag)
@@ -139,9 +137,7 @@ async def is_ignored(
 
     from pybot.core.database import Ignore
 
-    result = await session.execute(
-        select(Ignore).where(Ignore.active == True)  # noqa: E712
-    )
+    result = await session.execute(select(Ignore).where(Ignore.active == True))  # noqa: E712
     now = datetime.now(tz=timezone.utc)
     for ignore in result.scalars().all():
         if ignore.expires_at and ignore.expires_at < now:

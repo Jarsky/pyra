@@ -55,9 +55,7 @@ async def cmd_reload(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, f"Failed to reload '{name}': {exc}")  # type: ignore[attr-defined]
 
 
-@plugin.command(
-    "load", privilege="n", help="Load a plugin", usage="!load <plugin_name_or_path>"
-)
+@plugin.command("load", privilege="n", help="Load a plugin", usage="!load <plugin_name_or_path>")
 async def cmd_load(bot: object, trigger: Trigger) -> None:
     if not trigger.args:
         await bot.reply(trigger, "Usage: !load <plugin>")  # type: ignore[attr-defined]
@@ -92,9 +90,7 @@ async def cmd_load(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, f"Failed to load '{name}': {exc}")  # type: ignore[attr-defined]
 
 
-@plugin.command(
-    "unload", privilege="n", help="Unload a plugin", usage="!unload <plugin>"
-)
+@plugin.command("unload", privilege="n", help="Unload a plugin", usage="!unload <plugin>")
 async def cmd_unload(bot: object, trigger: Trigger) -> None:
     if not trigger.args:
         await bot.reply(trigger, "Usage: !unload <plugin>")  # type: ignore[attr-defined]

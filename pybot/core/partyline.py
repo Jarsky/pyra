@@ -108,9 +108,7 @@ class PartylineSession:
             "Type a command (e.g. !say #chan Hello) or * message to chat.\r\n"
             "Type 'who' to see connected admins, 'quit' to disconnect.\r\n"
         )
-        await self._server.broadcast(
-            f"*** {self.nick} joined the partyline", exclude=self
-        )
+        await self._server.broadcast(f"*** {self.nick} joined the partyline", exclude=self)
 
         try:
             while True:
@@ -140,9 +138,7 @@ class PartylineSession:
             logger.error(f"Partyline session error: {exc}")
         finally:
             if self.nick:
-                await self._server.broadcast(
-                    f"*** {self.nick} left the partyline", exclude=self
-                )
+                await self._server.broadcast(f"*** {self.nick} left the partyline", exclude=self)
             self._writer.close()
 
     async def disconnect(self, reason: str = "") -> None:
@@ -155,11 +151,7 @@ class PartylineSession:
     # ------------------------------------------------------------------
 
     async def _authenticate(self) -> bool:
-        await self.send(
-            f"\r\nPyra IRC Bot Partyline\r\n"
-            f"{'─' * 40}\r\n\r\n"
-            "Login: "
-        )
+        await self.send(f"\r\nPyra IRC Bot Partyline\r\n" f"{'─' * 40}\r\n\r\n" "Login: ")
         attempts = 0
         while attempts < MAX_LOGIN_ATTEMPTS:
             try:
@@ -205,9 +197,7 @@ class PartylineSession:
 
         try:
             async with get_session() as session:
-                result = await session.execute(
-                    select(User).where(User.nick == username)
-                )
+                result = await session.execute(select(User).where(User.nick == username))
                 user = result.scalar_one_or_none()
 
             if not user or not user.password_hash:

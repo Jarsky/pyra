@@ -22,9 +22,9 @@ from pybot.plugin import _set_current_plugin, get_registry
 class PluginLoader:
     def __init__(self, bot: object) -> None:
         self._bot = bot
-        self._loaded: dict[str, ModuleType] = {}          # name -> module
-        self._paths: dict[str, Path] = {}                  # name -> file path
-        self._mtimes: dict[str, float] = {}                # name -> last mtime
+        self._loaded: dict[str, ModuleType] = {}  # name -> module
+        self._paths: dict[str, Path] = {}  # name -> file path
+        self._mtimes: dict[str, float] = {}  # name -> last mtime
         self._watch_task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
@@ -42,9 +42,7 @@ class PluginLoader:
         _set_current_plugin(name)
 
         try:
-            spec = importlib.util.spec_from_file_location(
-                f"pybot.plugins._loaded.{name}", path
-            )
+            spec = importlib.util.spec_from_file_location(f"pybot.plugins._loaded.{name}", path)
             if spec is None or spec.loader is None:
                 raise ImportError(f"Cannot create spec for {path}")
 
@@ -129,9 +127,7 @@ class PluginLoader:
                 await self.load(name, path)
 
         # Start the file watcher
-        self._watch_task = asyncio.create_task(
-            self._watch_for_changes(), name="plugin-watcher"
-        )
+        self._watch_task = asyncio.create_task(self._watch_for_changes(), name="plugin-watcher")
 
     def get_loaded_plugins(self) -> dict[str, Path]:
         return dict(self._paths)

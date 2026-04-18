@@ -96,9 +96,7 @@ async def _on_nick(bot: object, trigger: Trigger) -> None:
     await _update_seen(trigger.nick, "*", "quit", f"Changed nick to {trigger.message.text}")
 
 
-async def _update_seen(
-    nick: str, channel: str, action: str, message: str | None = None
-) -> None:
+async def _update_seen(nick: str, channel: str, action: str, message: str | None = None) -> None:
     from pybot.core.database import SeenEntry, get_session
 
     async with get_session() as session:

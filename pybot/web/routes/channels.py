@@ -36,9 +36,16 @@ async def channel_settings(
     from pybot.core.database import get_channel_setting, get_session
 
     settings_keys = [
-        "greet", "greet_msg", "antispam", "url_titles",
-        "flood_lines", "flood_seconds", "flood_action",
-        "log", "autoop", "autovoice",
+        "greet",
+        "greet_msg",
+        "antispam",
+        "url_titles",
+        "flood_lines",
+        "flood_seconds",
+        "flood_action",
+        "log",
+        "autoop",
+        "autovoice",
     ]
     settings = {}
     async with get_session() as session:
@@ -70,6 +77,4 @@ async def save_channel_settings(
         for key, value in form.items():
             await set_channel_setting(session, channel_name, key, str(value))
 
-    return RedirectResponse(
-        url=f"/channels/{channel_name}/settings?saved=1", status_code=303
-    )
+    return RedirectResponse(url=f"/channels/{channel_name}/settings?saved=1", status_code=303)

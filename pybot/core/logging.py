@@ -44,8 +44,7 @@ def setup_logging(config: "BotConfig") -> None:
             retention="30 days" if config.core.log_rotate else None,
             compression="gz" if config.core.log_rotate else None,
             format=(
-                "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | "
-                "{name}:{function}:{line} - {message}"
+                "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | " "{name}:{function}:{line} - {message}"
             ),
             encoding="utf-8",
         )

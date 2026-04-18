@@ -137,14 +137,14 @@ class IRCMessage:
                         msg.tags[k] = _unescape_tag_value(v)
                     else:
                         msg.tags[tag] = ""
-                s = s[tag_match.end():]
+                s = s[tag_match.end() :]
 
         # Parse prefix
         if s.startswith(":"):
             prefix_match = _PREFIX_RE.match(s)
             if prefix_match:
                 msg.prefix = prefix_match.group(1)
-                s = s[prefix_match.end():]
+                s = s[prefix_match.end() :]
 
         # Parse command and params
         if " :" in s:
@@ -314,13 +314,9 @@ class IRCConnection:
             if not self._running:
                 break
 
-            logger.info(
-                f"Reconnecting in {self._reconnect_delay:.0f}s..."
-            )
+            logger.info(f"Reconnecting in {self._reconnect_delay:.0f}s...")
             await asyncio.sleep(self._reconnect_delay)
-            self._reconnect_delay = min(
-                self._reconnect_delay * 2, self._max_reconnect_delay
-            )
+            self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
 
     async def stop(self) -> None:
         self._running = False
@@ -356,6 +352,7 @@ class IRCConnection:
         sock = self._writer.get_extra_info("socket")
         if sock:
             import socket as _socket
+
             sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, 1)
 
         self._connected = True
@@ -398,9 +395,7 @@ class IRCConnection:
             await self.send_raw(f"PASS :{server.password.get_secret_value()}")
 
         await self.send_raw(f"NICK {core.nick}")
-        await self.send_raw(
-            f"USER {core.ident} 0 * :{core.realname}"
-        )
+        await self.send_raw(f"USER {core.ident} 0 * :{core.realname}")
 
     # ------------------------------------------------------------------
     # Reader loop
@@ -525,7 +520,7 @@ class IRCConnection:
         else:
             try:
                 idx = core.altnicks.index(current)
-                altnicks = core.altnicks[idx + 1:]
+                altnicks = core.altnicks[idx + 1 :]
             except (ValueError, IndexError):
                 altnicks = []
 
@@ -609,9 +604,7 @@ class IRCConnection:
         if mechanism == "PLAIN":
             user = auth.sasl_username or self._config.core.nick
             password = auth.sasl_password.get_secret_value()
-            payload = base64.b64encode(
-                f"\x00{user}\x00{password}".encode()
-            ).decode()
+            payload = base64.b64encode(f"\x00{user}\x00{password}".encode()).decode()
             await self.send_raw(f"AUTHENTICATE {payload}")
 
         elif mechanism == "EXTERNAL":

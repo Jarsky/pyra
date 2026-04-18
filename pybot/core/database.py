@@ -108,9 +108,7 @@ class User(Base):
     account: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     global_flags: Mapped[str] = mapped_column(String(32), default="")
     password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen_where: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
@@ -118,7 +116,9 @@ class User(Base):
         "UserFlag", back_populates="user", cascade="all, delete-orphan"
     )
     tells: Mapped[list["Tell"]] = relationship(
-        "Tell", foreign_keys="Tell.to_nick", primaryjoin="User.nick == Tell.to_nick",
+        "Tell",
+        foreign_keys="Tell.to_nick",
+        primaryjoin="User.nick == Tell.to_nick",
         viewonly=True,
     )
     notes: Mapped[list["Note"]] = relationship(
@@ -327,9 +327,7 @@ class ScheduledTask(Base):
 async def get_or_create_channel(session: AsyncSession, name: str) -> Channel:
     from sqlalchemy import select
 
-    result = await session.execute(
-        select(Channel).where(Channel.name == name.lower())
-    )
+    result = await session.execute(select(Channel).where(Channel.name == name.lower()))
     ch = result.scalar_one_or_none()
     if ch is None:
         ch = Channel(name=name.lower())
@@ -359,9 +357,7 @@ async def set_channel_setting(
 
     ch = await get_or_create_channel(session, channel_name)
     result = await session.execute(
-        select(ChannelSetting).where(
-            ChannelSetting.channel_id == ch.id, ChannelSetting.key == key
-        )
+        select(ChannelSetting).where(ChannelSetting.channel_id == ch.id, ChannelSetting.key == key)
     )
     setting = result.scalar_one_or_none()
     if setting:

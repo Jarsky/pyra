@@ -130,7 +130,7 @@ class WebConfig(BaseModel):
         if self.enabled and not self.secret_key.get_secret_value():
             raise ValueError(
                 "web.secret_key must be set when web interface is enabled. "
-                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
             )
         return self
 

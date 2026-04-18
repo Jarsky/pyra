@@ -58,6 +58,7 @@ async def console_ws(websocket: WebSocket) -> None:
         bot.partyline._ws_queues.append(queue)
 
     try:
+
         async def sender() -> None:
             while True:
                 message = await queue.get()

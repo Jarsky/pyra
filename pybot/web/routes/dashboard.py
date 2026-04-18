@@ -34,9 +34,7 @@ async def dashboard(
     from pybot.core.database import Log, get_session
 
     async with get_session() as session:
-        result = await session.execute(
-            select(Log).order_by(Log.logged_at.desc()).limit(50)
-        )
+        result = await session.execute(select(Log).order_by(Log.logged_at.desc()).limit(50))
         logs = result.scalars().all()
 
     return templates.TemplateResponse(

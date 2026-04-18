@@ -28,15 +28,18 @@ async def plugins_list(
         plugins = []
         for name, path in sorted(loader.get_loaded_plugins().items()):
             cmds = [
-                cmd for cmd, handlers in registry.commands.items()
+                cmd
+                for cmd, handlers in registry.commands.items()
                 if any(h.plugin_name == name for h in handlers)
             ]
-            plugins.append({
-                "name": name,
-                "path": str(path),
-                "commands": cmds,
-                "loaded": True,
-            })
+            plugins.append(
+                {
+                    "name": name,
+                    "path": str(path),
+                    "commands": cmds,
+                    "loaded": True,
+                }
+            )
 
     return templates.TemplateResponse(
         "plugins.html",

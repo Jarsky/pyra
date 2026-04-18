@@ -56,9 +56,7 @@ async def save_settings(
         result = await session.execute(select(User).where(User.nick == username))
         user = result.scalar_one_or_none()
         if not user or not await has_flag(session, user.hostmask, "n"):
-            return RedirectResponse(
-                url="/settings?error=Owner+required", status_code=303
-            )
+            return RedirectResponse(url="/settings?error=Owner+required", status_code=303)
 
     try:
         parsed = yaml.safe_load(config_yaml)

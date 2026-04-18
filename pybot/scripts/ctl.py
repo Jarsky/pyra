@@ -1,4 +1,5 @@
 """pybot-ctl — daemon process manager."""
+
 from __future__ import annotations
 
 import argparse

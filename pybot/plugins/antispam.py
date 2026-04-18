@@ -24,7 +24,7 @@ _escalation: dict[str, int] = defaultdict(int)
 # Nick-channel -> last warning time
 _last_warn: dict[str, float] = {}
 
-_DEFAULT_RATE = 5   # messages per window
+_DEFAULT_RATE = 5  # messages per window
 _DEFAULT_WINDOW = 3  # seconds
 _DEFAULT_CAPS_PCT = 75
 _DEFAULT_REPEAT = 3
@@ -51,9 +51,7 @@ async def _on_privmsg(bot: object, trigger: Trigger) -> None:
 
     async with get_session() as session:
         rate = int(
-            await get_channel_setting(
-                session, trigger.channel, "flood_lines", str(_DEFAULT_RATE)
-            )
+            await get_channel_setting(session, trigger.channel, "flood_lines", str(_DEFAULT_RATE))
         )
         window = int(
             await get_channel_setting(
@@ -63,9 +61,7 @@ async def _on_privmsg(bot: object, trigger: Trigger) -> None:
         action = await get_channel_setting(session, trigger.channel, "flood_action", "kick")
         antispam_on = await get_channel_setting(session, trigger.channel, "antispam", "true")
         caps_pct = int(
-            await get_channel_setting(
-                session, trigger.channel, "caps_pct", str(_DEFAULT_CAPS_PCT)
-            )
+            await get_channel_setting(session, trigger.channel, "caps_pct", str(_DEFAULT_CAPS_PCT))
         )
         repeat_limit = int(
             await get_channel_setting(

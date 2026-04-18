@@ -52,8 +52,9 @@ class ChannelState:
     def get_nick(self, nick: str) -> NickState | None:
         return self.nicks.get(nick.lower())
 
-    def add_nick(self, nick: str, user: str = "", host: str = "",
-                 account: str | None = None) -> NickState:
+    def add_nick(
+        self, nick: str, user: str = "", host: str = "", account: str | None = None
+    ) -> NickState:
         ns = NickState(nick=nick, user=user, host=host, account=account)
         self.nicks[nick.lower()] = ns
         return ns
@@ -79,7 +80,7 @@ class PyraBot:
     def __init__(self, config: BotConfig) -> None:
         self.config = config
         self.channels: dict[str, ChannelState] = {}  # lowercased channel name
-        self.memory: dict[str, Any] = {}             # shared plugin memory
+        self.memory: dict[str, Any] = {}  # shared plugin memory
         self.start_time: float = time.monotonic()
         self._current_nick: str = config.core.nick
 
@@ -188,6 +189,7 @@ class PyraBot:
     async def db_session(self) -> "AsyncSession":
         """Return a new DB session. Use as async context manager."""
         from pybot.core.database import get_session
+
         return get_session()  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
@@ -238,7 +240,7 @@ class PyraBot:
 
             # Check for command prefix
             if text.startswith(core.command_prefix):
-                parts = text[len(core.command_prefix):].split()
+                parts = text[len(core.command_prefix) :].split()
                 if not parts:
                     return
                 cmd_name = parts[0].lower()

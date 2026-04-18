@@ -1,4 +1,5 @@
 """pybot-setup — interactive first-run wizard."""
+
 from __future__ import annotations
 
 import asyncio
@@ -87,6 +88,7 @@ def _warn(msg: str) -> None:
 
 def _generate_secret_key() -> str:
     import secrets
+
     return secrets.token_hex(32)
 
 
@@ -197,7 +199,9 @@ def main() -> None:
         db_user = _prompt("PostgreSQL user", "pyra")
         db_pass = _prompt("PostgreSQL password", secret=True)
         db_name = _prompt("PostgreSQL database", "pyra")
-        cfg["database"]["url"] = f"postgresql+asyncpg://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+        cfg["database"][
+            "url"
+        ] = f"postgresql+asyncpg://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     else:
         data_dir = Path(_prompt("Data directory (for SQLite + logs)", "data"))
         data_dir.mkdir(parents=True, exist_ok=True)

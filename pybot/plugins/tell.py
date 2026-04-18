@@ -72,9 +72,7 @@ async def _deliver_tells(bot: object, nick: str, channel: str) -> None:
 
     async with get_session() as session:
         result = await session.execute(
-            select(Tell).where(
-                Tell.to_nick == nick, Tell.delivered == False  # noqa: E712
-            )
+            select(Tell).where(Tell.to_nick == nick, Tell.delivered == False)  # noqa: E712
         )
         tells = result.scalars().all()
 
