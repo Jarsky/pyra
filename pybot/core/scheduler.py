@@ -21,8 +21,12 @@ from pybot.plugin import IntervalHandler, get_registry
 
 @dataclass
 class _RunningJob:
+    name: str
     handler: IntervalHandler
     task: asyncio.Task[None]
+    paused: bool = False
+    last_run: datetime | None = None
+    next_run: datetime | None = None
 
 
 class Scheduler:
@@ -34,11 +38,7 @@ class Scheduler:
         """Start tasks for all registered interval handlers."""
         registry = get_registry()
         for handler in registry.intervals:
-            task = asyncio.create_task(
-                self._interval_loop(handler),
-                name=f"scheduler-{handler.plugin_name}-{handler.func.__name__}",
-            )
-            self._jobs.append(_RunningJob(handler=handler, task=task))
+            self._jobs.append(self._start_job(handler))
 
     async def stop(self) -> None:
         for job in self._jobs:
@@ -57,23 +57,149 @@ class Scheduler:
 
     def add_interval_handler(self, handler: IntervalHandler) -> None:
         """Register a new interval handler at runtime (used after plugin reload)."""
-        task = asyncio.create_task(
-            self._interval_loop(handler),
-            name=f"scheduler-{handler.plugin_name}-{handler.func.__name__}",
-        )
-        self._jobs.append(_RunningJob(handler=handler, task=task))
+        self._jobs.append(self._start_job(handler))
 
-    async def _interval_loop(self, handler: IntervalHandler) -> None:
+    def list_jobs(self) -> list[dict[str, str | bool | None]]:
+        return [
+            {
+                "name": job.name,
+                "schedule": self._format_schedule(job.handler),
+                "paused": job.paused,
+                "next_run": job.next_run.isoformat() if job.next_run else None,
+                "last_run": job.last_run.isoformat() if job.last_run else None,
+            }
+            for job in self._jobs
+        ]
+
+    def pause_job(self, name: str) -> bool:
+        for job in self._jobs:
+            if job.name == name:
+                job.paused = True
+                return True
+        return False
+
+    def resume_job(self, name: str) -> bool:
+        for job in self._jobs:
+            if job.name == name:
+                job.paused = False
+                return True
+        return False
+
+    def _start_job(self, handler: IntervalHandler) -> _RunningJob:
+        job_name = f"{handler.plugin_name}.{handler.func.__name__}"
+        if handler.cron:
+            task = asyncio.create_task(
+                self._cron_loop(job_name, handler),
+                name=f"scheduler-{handler.plugin_name}-{handler.func.__name__}",
+            )
+        else:
+            task = asyncio.create_task(
+                self._interval_loop(job_name, handler),
+                name=f"scheduler-{handler.plugin_name}-{handler.func.__name__}",
+            )
+        return _RunningJob(name=job_name, handler=handler, task=task)
+
+    def _format_schedule(self, handler: IntervalHandler) -> str:
+        if handler.cron:
+            return f"cron:{handler.cron}"
+        if handler.seconds is not None:
+            return f"every {handler.seconds:g}s"
+        return "unknown"
+
+    def _warn_if_delayed(
+        self, job_name: str, delay_seconds: float, expected_seconds: float
+    ) -> None:
+        if expected_seconds <= 0:
+            return
+        if delay_seconds > expected_seconds * 0.1:
+            logger.warning(
+                f"Scheduler late fire: {job_name} delayed by {delay_seconds:.2f}s "
+                f"(expected interval {expected_seconds:.2f}s)"
+            )
+
+    def _get_job(self, job_name: str) -> _RunningJob | None:
+        for job in self._jobs:
+            if job.name == job_name:
+                return job
+        return None
+
+    async def _interval_loop(self, job_name: str, handler: IntervalHandler) -> None:
+        seconds = float(handler.seconds or 0)
+        if seconds <= 0:
+            logger.error(
+                f"Scheduler invalid interval for {handler.plugin_name}.{handler.func.__name__}: "
+                f"{handler.seconds!r}"
+            )
+            return
+
+        loop = asyncio.get_event_loop()
+        next_due = loop.time() + seconds
         while True:
-            await asyncio.sleep(handler.seconds)
+            wait = max(0.0, next_due - loop.time())
+            await asyncio.sleep(wait)
+
+            now_mono = loop.time()
+            delay = max(0.0, now_mono - next_due)
+            self._warn_if_delayed(job_name, delay, seconds)
+
+            job = self._get_job(job_name)
+            if job:
+                job.next_run = datetime.now(tz=timezone.utc) + timedelta(seconds=seconds)
+                if job.paused:
+                    next_due = now_mono + seconds
+                    continue
+
             try:
                 await handler.func(self._bot)
+                if job:
+                    job.last_run = datetime.now(tz=timezone.utc)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.error(
                     f"Scheduler error in {handler.plugin_name}.{handler.func.__name__}: {exc}"
                 )
+
+            next_due += seconds
+            if next_due < now_mono:
+                next_due = now_mono + seconds
+
+    async def _cron_loop(self, job_name: str, handler: IntervalHandler) -> None:
+        assert handler.cron is not None
+        anchor = datetime.now(tz=timezone.utc)
+
+        while True:
+            next_fire = next_cron_time(handler.cron, after=anchor)
+            now = datetime.now(tz=timezone.utc)
+            wait = max(0.0, (next_fire - now).total_seconds())
+
+            job = self._get_job(job_name)
+            if job:
+                job.next_run = next_fire
+
+            await asyncio.sleep(wait)
+            current = datetime.now(tz=timezone.utc)
+            delay = max(0.0, (current - next_fire).total_seconds())
+            subsequent = next_cron_time(handler.cron, after=next_fire)
+            expected = (subsequent - next_fire).total_seconds()
+            self._warn_if_delayed(job_name, delay, expected)
+
+            if job and job.paused:
+                anchor = next_fire
+                continue
+
+            try:
+                await handler.func(self._bot)
+                if job:
+                    job.last_run = datetime.now(tz=timezone.utc)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error(
+                    f"Scheduler error in {handler.plugin_name}.{handler.func.__name__}: {exc}"
+                )
+
+            anchor = next_fire
 
 
 # ---------------------------------------------------------------------------

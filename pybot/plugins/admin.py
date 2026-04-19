@@ -2,7 +2,7 @@
 Admin plugin — bot administration commands (owner/admin only).
 
 Author:  Jarsky
-Version: 1.1.0
+Version: 1.2.0
 Date:    2026-04-20
 
 All commands require 'a' (admin) or 'n' (owner) flag.
@@ -21,6 +21,9 @@ Commands:
   !setpass <nick> <password>      Set Web UI/partyline password for a user (owner)
   !passwd <newpassword>           Change your own Web UI/partyline password
   !useserviceauth                 Bind your IRC services account as owner account (owner only)
+    !jobs list                      Show scheduler jobs
+    !jobs pause <plugin.func>       Pause a scheduler job
+    !jobs resume <plugin.func>      Resume a scheduler job
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ import string
 
 __plugin_meta__ = {
     "author": "Jarsky",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "updated": "2026-04-20",
     "description": "Bot admin commands (join, part, say, reload, quit). Owner/admin only.",
     "url": "https://github.com/Jarsky/pyra",
@@ -500,6 +503,62 @@ async def cmd_servers(bot: object, trigger: Trigger) -> None:
             trigger.nick,
             f"{s.host}:{s.port} SSL={s.ssl} priority={s.priority}",
         )
+
+
+@plugin.command(
+    "jobs",
+    privilege="a",
+    help="List/pause/resume scheduler jobs",
+    usage="!jobs <list|pause|resume> [plugin.func]",
+)
+async def cmd_jobs(bot: object, trigger: Trigger) -> None:
+    scheduler = getattr(bot, "scheduler", None)
+    if scheduler is None:
+        await bot.reply(trigger, "Scheduler not available.")  # type: ignore[attr-defined]
+        return
+
+    if not trigger.args:
+        await bot.reply(trigger, "Usage: !jobs <list|pause|resume> [plugin.func]")  # type: ignore[attr-defined]
+        return
+
+    action = trigger.args[0].lower()
+    if action == "list":
+        jobs = scheduler.list_jobs()  # type: ignore[attr-defined]
+        if not jobs:
+            await bot.reply(trigger, "No scheduler jobs registered.")  # type: ignore[attr-defined]
+            return
+        await bot.notice(trigger.nick, f"Scheduler jobs ({len(jobs)}):")  # type: ignore[attr-defined]
+        for job in sorted(jobs, key=lambda j: str(j["name"])):
+            paused = "paused" if bool(job["paused"]) else "running"
+            next_run = str(job["next_run"] or "-")
+            await bot.notice(  # type: ignore[attr-defined]
+                trigger.nick,
+                f"{job['name']} [{paused}] {job['schedule']} next={next_run}",
+            )
+        return
+
+    if len(trigger.args) < 2:
+        await bot.reply(trigger, "Usage: !jobs <pause|resume> <plugin.func>")  # type: ignore[attr-defined]
+        return
+
+    job_name = trigger.args[1]
+    if action == "pause":
+        ok = scheduler.pause_job(job_name)  # type: ignore[attr-defined]
+        if ok:
+            await bot.reply(trigger, f"Paused job {job_name}.")  # type: ignore[attr-defined]
+        else:
+            await bot.reply(trigger, f"Job not found: {job_name}")  # type: ignore[attr-defined]
+        return
+
+    if action == "resume":
+        ok = scheduler.resume_job(job_name)  # type: ignore[attr-defined]
+        if ok:
+            await bot.reply(trigger, f"Resumed job {job_name}.")  # type: ignore[attr-defined]
+        else:
+            await bot.reply(trigger, f"Job not found: {job_name}")  # type: ignore[attr-defined]
+        return
+
+    await bot.reply(trigger, "Usage: !jobs <list|pause|resume> [plugin.func]")  # type: ignore[attr-defined]
 
 
 @plugin.command(

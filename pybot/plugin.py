@@ -59,7 +59,8 @@ class EventHandler:
 
 @dataclass
 class IntervalHandler:
-    seconds: float
+    seconds: float | None
+    cron: str | None
     func: Callable[..., Any]
     plugin_name: str
 
@@ -225,14 +226,27 @@ def event(
 
 
 def interval(
-    seconds: float,
+    schedule: float | str,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Register a periodic task that runs every N seconds."""
+    """Register a periodic task.
+
+    `schedule` can be either:
+    - float/int seconds
+    - 5-field cron expression string (min hour dom month dow)
+    """
+
+    if isinstance(schedule, str):
+        seconds: float | None = None
+        cron: str | None = schedule.strip()
+    else:
+        seconds = float(schedule)
+        cron = None
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         _registry.intervals.append(
             IntervalHandler(
                 seconds=seconds,
+                cron=cron,
                 func=func,
                 plugin_name=_current_plugin,
             )

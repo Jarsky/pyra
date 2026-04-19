@@ -27,6 +27,7 @@ Admin auth note:
 - Owner can also set one manually with `!setpass <nick> <password>`.
 - Admins can rotate their own with `!passwd <newpassword>`.
 - Owner can bind services-account identity with `!useserviceauth` for stronger account-based auth.
+- Admins can inspect and control scheduler tasks with `!jobs list`, `!jobs pause <plugin.func>`, and `!jobs resume <plugin.func>`.
 
 CTCP/DCC compatibility:
 
