@@ -534,8 +534,7 @@ async def cmd_useserviceauth(bot: object, trigger: Trigger) -> None:
     if not account:
         await bot.reply(  # type: ignore[attr-defined]
             trigger,
-            "You are not logged in to an IRC services account. "
-            "Identify with NickServ first.",
+            "You are not logged in to an IRC services account. " "Identify with NickServ first.",
         )
         return
 
