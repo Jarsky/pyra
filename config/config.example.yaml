@@ -110,6 +110,9 @@ web:
   secret_key: ""                 # Auto-generated on first run if blank — or set explicitly to pin it
   debug: false
   session_timeout: 28800         # Seconds (8 hours)
+  trusted_proxies:               # Only trust forwarded headers from these proxy IPs/CIDRs
+    - "127.0.0.1"
+    - "::1"
 
 # ─────────────────────────────────────────────────────────────
 # PLUGINS

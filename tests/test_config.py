@@ -101,6 +101,23 @@ def test_web_enabled_with_empty_secret_key_is_valid(minimal_config_dict: dict) -
     assert config.web.enabled
 
 
+def test_web_trusted_proxies_defaults(minimal_config_dict: dict) -> None:
+    config = BotConfig.model_validate(minimal_config_dict)
+    assert config.web.trusted_proxies == ["127.0.0.1", "::1"]
+
+
+def test_web_trusted_proxies_accepts_cidr(minimal_config_dict: dict) -> None:
+    minimal_config_dict["web"]["trusted_proxies"] = ["10.0.0.0/8", "192.168.1.10"]
+    config = BotConfig.model_validate(minimal_config_dict)
+    assert config.web.trusted_proxies == ["10.0.0.0/8", "192.168.1.10"]
+
+
+def test_web_trusted_proxies_reject_invalid_entry(minimal_config_dict: dict) -> None:
+    minimal_config_dict["web"]["trusted_proxies"] = ["not-an-ip"]
+    with pytest.raises(Exception, match="trusted_proxies"):
+        BotConfig.model_validate(minimal_config_dict)
+
+
 def test_web_secret_key_auto_generated(tmp_path: Path) -> None:
     """load_config auto-generates and persists secret_key when web is enabled and key is empty."""
     cfg = copy.deepcopy(MINIMAL_CONFIG)

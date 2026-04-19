@@ -122,6 +122,8 @@ server {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -130,6 +132,20 @@ server {
 ```
 
 The WebSocket upgrade headers are required for the `/console/ws` endpoint.
+
+Set `web.trusted_proxies` in `config.yaml` to include your proxy address/CIDR,
+for example `127.0.0.1` when nginx runs on the same host.
+
+## Caddy Reverse Proxy (Web UI)
+
+```caddy
+pyra.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Caddy forwards the standard headers automatically. Ensure the proxy source IP
+is included in `web.trusted_proxies`.
 
 ---
 

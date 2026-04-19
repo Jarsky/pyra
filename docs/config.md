@@ -115,7 +115,13 @@ web:
   host: "0.0.0.0"
   port: 8080
   secret_key: ""   # Auto-generated and saved to config.yaml on first run — leave blank or set explicitly
+  trusted_proxies:  # IP/CIDR list that can supply X-Forwarded-* headers
+    - "127.0.0.1"
+    - "::1"
 ```
+
+Use `trusted_proxies` to explicitly control which reverse proxies are allowed
+to set forwarded headers. Keep this list narrow to avoid header spoofing.
 
 ---
 

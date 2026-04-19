@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import ipaddress
 import os
 import secrets
 from pathlib import Path
@@ -138,6 +139,27 @@ class WebConfig(BaseModel):
     secret_key: SecretStr = SecretStr("")
     debug: bool = False
     session_timeout: int = 28800
+    trusted_proxies: list[str] = Field(default_factory=lambda: ["127.0.0.1", "::1"])
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def validate_trusted_proxies(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw in values:
+            value = raw.strip()
+            if not value:
+                raise ValueError("trusted_proxies entries cannot be empty")
+            if value == "*":
+                normalized.append(value)
+                continue
+            try:
+                ipaddress.ip_network(value, strict=False)
+            except ValueError as exc:
+                raise ValueError(
+                    f"trusted_proxies entry must be IP/CIDR or '*': {value!r}"
+                ) from exc
+            normalized.append(value)
+        return normalized
 
 
 class PluginsConfig(BaseModel):

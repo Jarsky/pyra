@@ -27,6 +27,13 @@ def create_app(bot: "PyraBot") -> FastAPI:
     app = FastAPI(title="Pyra Web Admin", docs_url=None, redoc_url=None)
     app.state.bot = bot
 
+    # Trust X-Forwarded-* headers only from configured reverse proxies.
+    trusted_hosts = ",".join(bot.config.web.trusted_proxies)
+    if trusted_hosts:
+        from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted_hosts)
+
     # Static files
     if _STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
