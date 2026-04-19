@@ -473,6 +473,10 @@ class PyraBot:
             "332": [self._handle_topic],
             "TOPIC": [self._handle_topic_change],
             "MODE": [self._handle_mode],
+            "324": [self._handle_channel_mode_is],
+            "352": [self._handle_who_reply],
+            "367": [self._handle_ban_list],
+            "368": [self._handle_end_of_ban_list],
             "ACCOUNT": [self._handle_account],
             "CHGHOST": [self._handle_chghost],
             "NOTICE": [self._handle_notice],
@@ -498,6 +502,7 @@ class PyraBot:
             # We joined a channel
             self.channels[channel.lower()] = ChannelState(name=channel)
             logger.info(f"Joined {channel}")
+            await self.irc.send(f"WHO {channel}")
         else:
             ch = self.channels.get(channel.lower())
             if ch:
@@ -600,35 +605,109 @@ class PyraBot:
         if not ch or len(msg.params) < 2:
             return
 
-        modestr = msg.params[1]
-        nicks = msg.params[2:]
+        self._apply_channel_mode_changes(ch, target, msg.params[1], msg.params[2:])
+
+    def _apply_channel_mode_changes(
+        self,
+        channel: ChannelState,
+        target: str,
+        modestr: str,
+        args: list[str],
+    ) -> None:
+        mode_flags = set(channel.modes)
         setting = True
-        nick_idx = 0
+        arg_idx = 0
+
         for char in modestr:
             if char == "+":
                 setting = True
-            elif char == "-":
+                continue
+            if char == "-":
                 setting = False
-            elif char in self.irc.nick_prefix_modes:
-                if nick_idx < len(nicks):
-                    mode_nick = nicks[nick_idx]
-                    ns = ch.get_nick(mode_nick)
-                    if ns:
-                        if setting:
-                            ns.modes.add(char)
-                        else:
-                            ns.modes.discard(char)
+                continue
 
-                    if (
-                        self.config.services.enabled
-                        and self.config.services.channel_guard
-                        and char == "o"
-                        and mode_nick.lower() == self._current_nick.lower()
-                        and not setting
-                    ):
-                        if self.config.services.channel_guard_reop:
-                            await self.services.chanserv_op(target, self._current_nick)
-                    nick_idx += 1
+            arg: str | None = None
+            if self.irc.mode_takes_parameter(char, setting) and arg_idx < len(args):
+                arg = args[arg_idx]
+                arg_idx += 1
+
+            if char in self.irc.nick_prefix_modes and arg is not None:
+                mode_nick = arg
+                ns = channel.get_nick(mode_nick)
+                if ns:
+                    if setting:
+                        ns.modes.add(char)
+                    else:
+                        ns.modes.discard(char)
+
+                if (
+                    self.config.services.enabled
+                    and self.config.services.channel_guard
+                    and char == "o"
+                    and mode_nick.lower() == self._current_nick.lower()
+                    and not setting
+                    and self.config.services.channel_guard_reop
+                ):
+                    asyncio.create_task(self.services.chanserv_op(target, self._current_nick))
+                continue
+
+            if char == "b" and arg is not None:
+                if setting:
+                    channel.bans.add(arg)
+                else:
+                    channel.bans.discard(arg)
+
+            if setting:
+                mode_flags.add(char)
+            else:
+                mode_flags.discard(char)
+
+        channel.modes = "".join(sorted(mode_flags))
+
+    async def _handle_channel_mode_is(self, msg: IRCMessage) -> None:
+        """324 RPL_CHANNELMODEIS — sync current channel mode state."""
+        if len(msg.params) < 3:
+            return
+
+        channel_name = msg.params[1]
+        ch = self.channels.get(channel_name.lower())
+        if not ch:
+            return
+
+        self._apply_channel_mode_changes(ch, channel_name, msg.params[2], msg.params[3:])
+
+    async def _handle_who_reply(self, msg: IRCMessage) -> None:
+        """352 RPL_WHOREPLY — refresh nick user/host state from WHO replies."""
+        if len(msg.params) < 7:
+            return
+
+        channel_name = msg.params[1]
+        ch = self.channels.get(channel_name.lower())
+        if not ch:
+            return
+
+        user = msg.params[2]
+        host = msg.params[3]
+        nick = msg.params[5]
+        ns = ch.get_nick(nick)
+        if ns is None:
+            ns = ch.add_nick(nick)
+        ns.user = user
+        ns.host = host
+
+    async def _handle_ban_list(self, msg: IRCMessage) -> None:
+        """367 RPL_BANLIST — include listed ban mask in channel state."""
+        if len(msg.params) < 3:
+            return
+
+        channel_name = msg.params[1]
+        ch = self.channels.get(channel_name.lower())
+        if ch:
+            ch.bans.add(msg.params[2])
+
+    async def _handle_end_of_ban_list(self, msg: IRCMessage) -> None:
+        """368 RPL_ENDOFBANLIST marker."""
+        return
 
     async def _handle_account(self, msg: IRCMessage) -> None:
         """account-notify cap — user's account changed."""

@@ -231,6 +231,10 @@ class IRCConnection:
         self.nick_prefix_chars: str = "@+"
         self.nick_prefix_modes: set[str] = {"o", "v"}
         self.chanmodes: str = ""
+        self.chanmodes_a: set[str] = {"b"}
+        self.chanmodes_b: set[str] = set()
+        self.chanmodes_c: set[str] = set()
+        self.chanmodes_d: set[str] = set()
 
         # SASL
         self._sasl_done = asyncio.Event()
@@ -592,6 +596,7 @@ class IRCConnection:
                     self.network_name = value
                 elif key == "CHANMODES":
                     self.chanmodes = value
+                    self._apply_chanmodes_token(value)
                 elif key == "PREFIX":
                     self._apply_prefix_token(value)
             else:
@@ -616,6 +621,27 @@ class IRCConnection:
         self.prefix_to_mode = {prefix: mode for mode, prefix in pairs}
         self.nick_prefix_modes = set(self.mode_to_prefix.keys())
         self.nick_prefix_chars = "".join(prefix for _, prefix in pairs)
+
+    def _apply_chanmodes_token(self, value: str) -> None:
+        """Parse CHANMODES token into mode groups A,B,C,D."""
+        groups = value.split(",")
+        if len(groups) != 4:
+            return
+
+        self.chanmodes_a = set(groups[0])
+        self.chanmodes_b = set(groups[1])
+        self.chanmodes_c = set(groups[2])
+        self.chanmodes_d = set(groups[3])
+
+    def mode_takes_parameter(self, mode: str, setting: bool) -> bool:
+        """Return whether a channel mode consumes an argument in this direction."""
+        if mode in self.nick_prefix_modes:
+            return True
+        if mode in self.chanmodes_a or mode in self.chanmodes_b:
+            return True
+        if mode in self.chanmodes_c:
+            return setting
+        return False
 
     async def _on_433(self, msg: IRCMessage) -> None:
         """Nick already in use — try next altnick."""
@@ -670,7 +696,12 @@ class IRCConnection:
 
         elif subcommand == "ACK":
             acked = msg.params[-1].split()
-            self._caps_acked.update(c.lstrip("-~=") for c in acked)
+            for cap in acked:
+                cap_name = cap.lstrip("~=")
+                if cap_name.startswith("-"):
+                    self._caps_acked.discard(cap_name[1:])
+                else:
+                    self._caps_acked.add(cap_name)
 
             if "sasl" in self._caps_acked:
                 await self._begin_sasl()
@@ -685,12 +716,18 @@ class IRCConnection:
 
         elif subcommand == "NEW":
             # cap-notify: new caps appeared at runtime
-            pass
+            new_caps = {cap.split("=", 1)[0] for cap in msg.params[-1].split()}
+            self._caps_available.update(new_caps)
+            to_request = (self._desired_caps() & new_caps) - self._caps_acked
+            if to_request:
+                await self.send_raw(f"CAP REQ :{' '.join(sorted(to_request))}")
 
         elif subcommand == "DEL":
             # cap-notify: caps removed at runtime
             for cap in msg.params[-1].split():
-                self._caps_acked.discard(cap)
+                cap_name = cap.split("=", 1)[0]
+                self._caps_available.discard(cap_name)
+                self._caps_acked.discard(cap_name)
 
     async def _begin_sasl(self) -> None:
         mechanism = self._config.auth.sasl_mechanism

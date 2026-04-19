@@ -8,8 +8,7 @@ import pytest
 
 from pybot.core.bot import ChannelState, PyraBot
 from pybot.core.config import BotConfig
-from pybot.core.irc import IRCConnection
-from pybot.core.irc import IRCMessage
+from pybot.core.irc import IRCConnection, IRCMessage
 
 
 def parse(line: str) -> IRCMessage:
@@ -258,6 +257,65 @@ async def test_mode_uses_dynamic_prefix_modes(minimal_config_dict: dict) -> None
 
 
 @pytest.mark.asyncio
+async def test_mode_parser_consumes_non_prefix_args_before_prefix_modes(
+    minimal_config_dict: dict,
+) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+
+    channel = "#test"
+    bot.channels[channel.lower()] = ChannelState(name=channel)
+    bot.channels[channel.lower()].add_nick("alice")
+    bot.irc.nick_prefix_modes = {"o", "v"}
+    bot.irc.chanmodes_a = {"b", "e", "I"}
+
+    await bot._handle_mode(parse(":op!u@h MODE #test +bo bad!*@* alice"))
+
+    ch = bot.channels[channel.lower()]
+    ns = ch.get_nick("alice")
+    assert ns is not None
+    assert "o" in ns.modes
+    assert "bad!*@*" in ch.bans
+
+
+@pytest.mark.asyncio
+async def test_channel_mode_reply_and_ban_list_numerics_update_state(
+    minimal_config_dict: dict,
+) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+
+    channel = "#test"
+    bot.channels[channel.lower()] = ChannelState(name=channel)
+
+    await bot._handle_channel_mode_is(parse(":server 324 TestBot #test +nt"))
+    await bot._handle_ban_list(parse(":server 367 TestBot #test trouble!*@* op 1713520000"))
+
+    ch = bot.channels[channel.lower()]
+    assert "n" in ch.modes
+    assert "t" in ch.modes
+    assert "trouble!*@*" in ch.bans
+
+
+@pytest.mark.asyncio
+async def test_who_reply_refreshes_user_and_host(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+
+    channel = "#test"
+    bot.channels[channel.lower()] = ChannelState(name=channel)
+
+    await bot._handle_who_reply(
+        parse(":server 352 TestBot #test ident host srv alice H :0 Real Name")
+    )
+
+    ns = bot.channels[channel.lower()].get_nick("alice")
+    assert ns is not None
+    assert ns.user == "ident"
+    assert ns.host == "host"
+
+
+@pytest.mark.asyncio
 async def test_whois_dedup_in_flight_requests(minimal_config_dict: dict) -> None:
     cfg = BotConfig.model_validate(minimal_config_dict)
     conn = IRCConnection(cfg, lambda _msg: None)
@@ -309,3 +367,56 @@ async def test_whois_uses_cache_within_ttl(minimal_config_dict: dict) -> None:
 
     assert sent == ["WHOIS Alice"]
     assert first == second
+
+
+@pytest.mark.asyncio
+async def test_mode_takes_parameter_uses_chanmodes_groups(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+    await conn._on_005(
+        parse(
+            ":irc.example.com 005 TestBot CHANMODES=beI,k,l,imnpst "
+            "PREFIX=(ov)@+ :are supported by this server"
+        )
+    )
+
+    assert conn.mode_takes_parameter("b", True)
+    assert conn.mode_takes_parameter("k", True)
+    assert conn.mode_takes_parameter("k", False)
+    assert conn.mode_takes_parameter("l", True)
+    assert not conn.mode_takes_parameter("l", False)
+    assert not conn.mode_takes_parameter("m", True)
+
+
+@pytest.mark.asyncio
+async def test_cap_new_requests_new_desired_caps(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    sent_raw: list[str] = []
+
+    async def fake_send_raw(line: str) -> None:
+        sent_raw.append(line)
+
+    conn.send_raw = fake_send_raw  # type: ignore[method-assign]
+    conn._caps_acked.add("multi-prefix")
+
+    await conn._on_cap(parse(":server CAP * NEW :multi-prefix account-notify draft/test"))
+
+    assert conn._caps_available.issuperset({"multi-prefix", "account-notify", "draft/test"})
+    assert sent_raw == ["CAP REQ :account-notify"]
+
+
+@pytest.mark.asyncio
+async def test_cap_del_prunes_available_and_acked(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+    conn._caps_available.update({"account-notify", "chghost"})
+    conn._caps_acked.update({"account-notify", "chghost"})
+
+    await conn._on_cap(parse(":server CAP * DEL :account-notify"))
+
+    assert "account-notify" not in conn._caps_available
+    assert "account-notify" not in conn._caps_acked
+    assert "chghost" in conn._caps_available
+    assert "chghost" in conn._caps_acked
