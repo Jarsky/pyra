@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -96,15 +96,13 @@ async def cmd(bot, trigger):
     assert "v1cmd" in get_registry().commands
 
     # Rewrite the plugin
-    path.write_text(
-        """
+    path.write_text("""
 from pybot import plugin
 
 @plugin.command("v2cmd")
 async def cmd(bot, trigger):
     pass
-"""
-    )
+""")
     await loader.reload("reloadtest")
 
     assert "v2cmd" in get_registry().commands
@@ -170,9 +168,62 @@ async def shutdown(bot):
     assert mod.shutdown_called is True
 
 
+async def test_plugin_sync_setup_called(mock_bot: MagicMock, plugin_dir: Path) -> None:
+    path = _write_plugin(
+        plugin_dir,
+        "syncsetupplugin",
+        """
+setup_called = False
+
+def setup(bot):
+    global setup_called
+    setup_called = True
+""",
+    )
+    loader = PluginLoader(mock_bot)
+    await loader.load("syncsetupplugin", path)
+    import sys
+
+    mod = sys.modules.get("pybot.plugins._loaded.syncsetupplugin")
+    assert mod is not None
+    assert mod.setup_called is True
+
+    await loader.unload("syncsetupplugin")
+
+
+async def test_plugin_sync_shutdown_called(mock_bot: MagicMock, plugin_dir: Path) -> None:
+    path = _write_plugin(
+        plugin_dir,
+        "syncshutdownplugin",
+        """
+shutdown_called = False
+
+def shutdown(bot):
+    global shutdown_called
+    shutdown_called = True
+""",
+    )
+    loader = PluginLoader(mock_bot)
+    await loader.load("syncshutdownplugin", path)
+    import sys
+
+    mod = sys.modules.get("pybot.plugins._loaded.syncshutdownplugin")
+    await loader.unload("syncshutdownplugin")
+    assert mod is not None
+    assert mod.shutdown_called is True
+
+
 async def test_load_all_from_directory(mock_bot: MagicMock, plugin_dir: Path) -> None:
-    _write_plugin(plugin_dir, "pa", "from pybot import plugin\n@plugin.command('pa')\nasync def f(b,t): pass\n")
-    _write_plugin(plugin_dir, "pb", "from pybot import plugin\n@plugin.command('pb')\nasync def f(b,t): pass\n")
+    _write_plugin(
+        plugin_dir,
+        "pa",
+        "from pybot import plugin\n@plugin.command('pa')\nasync def f(b,t): pass\n",
+    )
+    _write_plugin(
+        plugin_dir,
+        "pb",
+        "from pybot import plugin\n@plugin.command('pb')\nasync def f(b,t): pass\n",
+    )
     _write_plugin(plugin_dir, "_private", "# should be skipped\n")
 
     loader = PluginLoader(mock_bot)

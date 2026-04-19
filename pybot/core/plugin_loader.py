@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -74,7 +75,9 @@ class PluginLoader:
 
             # Call plugin setup() if defined
             if hasattr(module, "setup") and callable(module.setup):
-                await module.setup(self._bot)
+                setup_result = module.setup(self._bot)
+                if inspect.isawaitable(setup_result):
+                    await setup_result
 
             logger.info(f"Plugin loaded: {name}")
         except Exception as exc:
@@ -96,7 +99,9 @@ class PluginLoader:
         # Call plugin shutdown() if defined
         if hasattr(module, "shutdown") and callable(module.shutdown):
             try:
-                await module.shutdown(self._bot)
+                shutdown_result = module.shutdown(self._bot)
+                if inspect.isawaitable(shutdown_result):
+                    await shutdown_result
             except Exception as exc:
                 logger.error(f"Plugin '{name}' shutdown() error: {exc}")
 
