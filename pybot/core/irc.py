@@ -254,6 +254,30 @@ class IRCConnection:
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
 
+    def _reset_runtime_session_state(self) -> None:
+        """Reset per-session protocol state so reconnects start cleanly."""
+        self.isupport.clear()
+        self.network_name = ""
+        self.mode_to_prefix = {"o": "@", "v": "+"}
+        self.prefix_to_mode = {"@": "o", "+": "v"}
+        self.nick_prefix_chars = "@+"
+        self.nick_prefix_modes = {"o", "v"}
+        self.chanmodes = ""
+        self.chanmodes_a = {"b"}
+        self.chanmodes_b = set()
+        self.chanmodes_c = set()
+        self.chanmodes_d = set()
+
+        self._caps_available.clear()
+        self._caps_acked.clear()
+
+        for fut in self._whois_futures.values():
+            if not fut.done():
+                fut.set_result({})
+        self._whois_futures.clear()
+        self._whois_data.clear()
+        self._whois_cache.clear()
+
     # ------------------------------------------------------------------
     # Public send methods
     # ------------------------------------------------------------------
@@ -399,6 +423,8 @@ class IRCConnection:
         server = self._config.primary_server
         logger.info(f"Connecting to {server.host}:{server.port} (SSL={server.ssl})")
 
+        self._reset_runtime_session_state()
+
         ssl_ctx: ssl.SSLContext | bool | None = None
         if server.ssl:
             ssl_ctx = ssl.create_default_context()
@@ -422,8 +448,6 @@ class IRCConnection:
 
         self._connected = True
         self._registered = False
-        self._caps_available.clear()
-        self._caps_acked.clear()
         self._sasl_done.clear()
 
         logger.info("TCP connection established")
@@ -448,6 +472,7 @@ class IRCConnection:
         finally:
             self._connected = False
             self._registered = False
+            self._reset_runtime_session_state()
 
     async def _begin_registration(self) -> None:
         """Send CAP LS, PASS, NICK, USER to begin registration."""

@@ -494,6 +494,59 @@ async def test_build_trigger_uses_whois_account_fallback_for_commands(
     assert trigger.account == "alice_account"
 
 
+def test_runtime_session_reset_clears_protocol_state(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    conn.isupport = {"NETWORK": "OldNet"}
+    conn.network_name = "OldNet"
+    conn.mode_to_prefix = {"q": "~"}
+    conn.prefix_to_mode = {"~": "q"}
+    conn.nick_prefix_chars = "~"
+    conn.nick_prefix_modes = {"q"}
+    conn.chanmodes = "beI,k,l,imnpst"
+    conn.chanmodes_a = {"b", "e", "I"}
+    conn.chanmodes_b = {"k"}
+    conn.chanmodes_c = {"l"}
+    conn.chanmodes_d = {"i", "m"}
+    conn._caps_available = {"account-notify"}
+    conn._caps_acked = {"account-notify"}
+    conn._whois_cache = {"alice": (999999.0, {"account": "alice"})}
+
+    conn._reset_runtime_session_state()
+
+    assert conn.isupport == {}
+    assert conn.network_name == ""
+    assert conn.mode_to_prefix == {"o": "@", "v": "+"}
+    assert conn.prefix_to_mode == {"@": "o", "+": "v"}
+    assert conn.nick_prefix_chars == "@+"
+    assert conn.nick_prefix_modes == {"o", "v"}
+    assert conn.chanmodes == ""
+    assert conn.chanmodes_a == {"b"}
+    assert conn.chanmodes_b == set()
+    assert conn.chanmodes_c == set()
+    assert conn.chanmodes_d == set()
+    assert conn._caps_available == set()
+    assert conn._caps_acked == set()
+    assert conn._whois_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_runtime_session_reset_resolves_pending_whois(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    fut: asyncio.Future[dict[str, str]] = asyncio.get_event_loop().create_future()
+    conn._whois_futures["alice"] = fut
+    conn._whois_data["alice"] = {"account": "alice"}
+
+    conn._reset_runtime_session_state()
+
+    assert await fut == {}
+    assert conn._whois_futures == {}
+    assert conn._whois_data == {}
+
+
 @pytest.mark.asyncio
 async def test_welcome_updates_current_nick_from_server(minimal_config_dict: dict) -> None:
     cfg = BotConfig.model_validate(minimal_config_dict)
