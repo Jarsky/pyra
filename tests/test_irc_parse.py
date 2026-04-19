@@ -492,3 +492,27 @@ async def test_build_trigger_uses_whois_account_fallback_for_commands(
 
     assert trigger is not None
     assert trigger.account == "alice_account"
+
+
+@pytest.mark.asyncio
+async def test_welcome_updates_current_nick_from_server(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+
+    await bot._dispatch(parse(":irc.example.com 001 AltBot :Welcome"))
+
+    assert bot.nick == "AltBot"
+
+
+@pytest.mark.asyncio
+async def test_welcome_clears_stale_state_on_new_session(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+
+    bot.channels["#old"] = ChannelState(name="#old")
+    bot._names_buffer["#old"] = ["stale"]
+
+    await bot._dispatch(parse(":irc.example.com 001 TestBot :Welcome"))
+
+    assert bot.channels == {}
+    assert bot._names_buffer == {}

@@ -470,6 +470,7 @@ class PyraBot:
 
     def _register_internal_handlers(self) -> None:
         self._internal_handlers = {
+            "001": [self._handle_welcome],
             "JOIN": [self._handle_join],
             "PART": [self._handle_part],
             "QUIT": [self._handle_quit],
@@ -488,6 +489,15 @@ class PyraBot:
             "CHGHOST": [self._handle_chghost],
             "NOTICE": [self._handle_notice],
         }
+
+    async def _handle_welcome(self, msg: IRCMessage) -> None:
+        """001 RPL_WELCOME — reset runtime state for a fresh server session."""
+        if msg.params and msg.params[0]:
+            self._current_nick = msg.params[0]
+
+        # A reconnect starts a new server session; stale state must be dropped.
+        self.channels.clear()
+        self._names_buffer.clear()
 
     async def _handle_notice(self, msg: IRCMessage) -> None:
         """Route NOTICE events to the services interface for service replies."""
