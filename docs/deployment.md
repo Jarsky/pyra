@@ -102,50 +102,97 @@ pybot-ctl status
 
 ---
 
-## nginx Reverse Proxy (Web UI)
+## Reverse Proxy Setup (HTTPS)
+
+If you expose the Pyra web UI publicly, run it behind a reverse proxy and terminate TLS there.
+
+### Pyra config changes (required)
+
+Set these values in `config.yaml`:
+
+```yaml
+web:
+    enabled: true
+    host: "127.0.0.1"
+    port: 8080
+    trusted_proxies:
+        - "127.0.0.1"
+```
+
+Notes:
+
+- Use `web.host: "127.0.0.1"` when proxy and Pyra run on the same host.
+- Use `web.host: "0.0.0.0"` if Pyra runs in Docker and your proxy is in another container/network.
+- Add your proxy source IP/CIDR to `web.trusted_proxies` so forwarded client IP headers are trusted.
+
+### Nginx (HTTPS)
 
 ```nginx
 server {
-    listen 80;
-    server_name pyra.example.com;
-    return 301 https://$host$request_uri;
+        listen 80;
+        server_name pyra.example.com;
+        return 301 https://$host$request_uri;
 }
 
 server {
-    listen 443 ssl;
-    server_name pyra.example.com;
+        listen 443 ssl;
+        server_name pyra.example.com;
 
-    ssl_certificate /etc/letsencrypt/live/pyra.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/pyra.example.com/privkey.pem;
+        ssl_certificate /etc/letsencrypt/live/pyra.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/pyra.example.com/privkey.pem;
 
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
+        location / {
+                proxy_pass http://127.0.0.1:8080;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+        }
 }
 ```
 
-The WebSocket upgrade headers are required for the `/console/ws` endpoint.
+The upgrade headers are required for the `/console/ws` WebSocket endpoint.
 
-Set `web.trusted_proxies` in `config.yaml` to include your proxy address/CIDR,
-for example `127.0.0.1` when nginx runs on the same host.
-
-## Caddy Reverse Proxy (Web UI)
+### Caddy (HTTPS)
 
 ```caddy
 pyra.example.com {
-    reverse_proxy 127.0.0.1:8080
+        reverse_proxy 127.0.0.1:8080
 }
 ```
 
-Caddy forwards the standard headers automatically. Ensure the proxy source IP
-is included in `web.trusted_proxies`.
+Caddy automatically provisions TLS and forwards standard proxy headers.
+
+### Traefik (HTTPS)
+
+File provider example (`dynamic/pyra.yml`):
+
+```yaml
+http:
+    routers:
+        pyra:
+            rule: Host(`pyra.example.com`)
+            entryPoints:
+                - websecure
+            tls:
+                certResolver: letsencrypt
+            service: pyra
+
+    services:
+        pyra:
+            loadBalancer:
+                servers:
+                    - url: http://127.0.0.1:8080
+```
+
+Static Traefik config must define:
+
+- `entryPoints.web` on `:80`
+- `entryPoints.websecure` on `:443`
+- an ACME resolver named `letsencrypt`
 
 ---
 
