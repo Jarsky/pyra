@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
-from pybot.core.database import User, UserFlag, close_db, get_session, init_db
+from pybot.core.database import close_db, get_session, init_db
 from pybot.core.permissions import (
     add_flag,
     add_owner_bootstrap,

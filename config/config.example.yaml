@@ -41,7 +41,9 @@ servers:
 # AUTHENTICATION (SASL / NickServ)
 # ─────────────────────────────────────────────────────────────
 auth:
-  auth_method: "none"           # none | sasl | nickserv | authserv | q | userserv | server_password
+  auth_method: "none"             # none | sasl | nickserv | authserv | q | userserv | server_password
+                                   # Note: server password is configured in servers[].password and can be combined with nickserv/authserv/q/userserv.
+                                   # Use auth_method: "server_password" only when PASS is the only auth step you need.
   sasl_mechanism: "PLAIN"         # PLAIN | EXTERNAL | SCRAM-SHA-256 | none
   sasl_username: ""               # Usually your NickServ account name
   sasl_password: ""               # NickServ / SASL password

@@ -47,7 +47,7 @@ class ServicesInterface:
 
     def on_notice(self, source: str, text: str) -> None:
         """Call this from the bot's NOTICE handler to process service replies."""
-        source_l = source.lower()
+        source_l = source.lower().split("@", 1)[0]
         if source_l not in ("nickserv", "chanserv", "memoserv", "hostserv"):
             return
 
@@ -68,6 +68,7 @@ class ServicesInterface:
             if wait_source == source_l and not notice_fut.done():
                 notice_fut.set_result(text)
                 self._pending_notice_waiters.remove((wait_source, notice_fut))
+                break
 
     async def _wait_for_service_notice(self, service: str, timeout: float = 8.0) -> str | None:
         loop = asyncio.get_event_loop()

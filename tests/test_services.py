@@ -84,3 +84,53 @@ async def test_nickserv_status_still_resolves() -> None:
     level = await task
 
     assert level == 3
+
+
+@pytest.mark.asyncio
+async def test_non_service_notice_does_not_resolve_service_waiter() -> None:
+    bot = _DummyBot()
+    services = ServicesInterface(bot)  # type: ignore[arg-type]
+
+    task = asyncio.create_task(services._wait_for_service_notice("NickServ", timeout=0.1))
+    await asyncio.sleep(0)
+
+    services.on_notice("randomuser", "\x01PING 12345\x01")
+    await asyncio.sleep(0)
+    assert not task.done()
+
+    services.on_notice("NickServ", "STATUS alice 3")
+    result = await task
+    assert result == "STATUS alice 3"
+
+
+@pytest.mark.asyncio
+async def test_service_notice_with_host_qualifier_resolves_status() -> None:
+    bot = _DummyBot()
+    services = ServicesInterface(bot)  # type: ignore[arg-type]
+
+    task = asyncio.create_task(services.nickserv_status("alice"))
+    await asyncio.sleep(0)
+
+    services.on_notice("NickServ@services.example.net", "STATUS alice 3")
+    level = await task
+
+    assert level == 3
+
+
+@pytest.mark.asyncio
+async def test_one_notice_resolves_only_one_waiter() -> None:
+    bot = _DummyBot()
+    services = ServicesInterface(bot)  # type: ignore[arg-type]
+
+    task1 = asyncio.create_task(services._wait_for_service_notice("ChanServ", timeout=0.1))
+    task2 = asyncio.create_task(services._wait_for_service_notice("ChanServ", timeout=0.1))
+    await asyncio.sleep(0)
+
+    services.on_notice("ChanServ", "first")
+    first = await task1
+    assert first == "first"
+    assert not task2.done()
+
+    services.on_notice("ChanServ", "second")
+    second = await task2
+    assert second == "second"

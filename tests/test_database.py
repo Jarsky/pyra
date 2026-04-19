@@ -8,8 +8,6 @@ import pytest
 
 from pybot.core.database import (
     Ban,
-    Channel,
-    ChannelSetting,
     SeenEntry,
     Tell,
     User,
@@ -157,9 +155,7 @@ async def test_seen_entry() -> None:
     async with get_session() as session:
         from sqlalchemy import select
 
-        result = await session.execute(
-            select(SeenEntry).where(SeenEntry.nick == "SomeUser")
-        )
+        result = await session.execute(select(SeenEntry).where(SeenEntry.nick == "SomeUser"))
         e = result.scalar_one()
         assert e.action == "said"
         assert e.message == "hello world"

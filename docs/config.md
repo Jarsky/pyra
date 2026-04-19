@@ -52,6 +52,15 @@ Notes:
 - `auth_method: sasl` uses CAP/SASL negotiation and does not send a post-connect IDENTIFY.
 - `auth_method: server_password` uses the server PASS value during registration.
 - `auth_method: authserv`, `q`, and `userserv` send service-specific AUTH/LOGIN commands after 001.
+- `servers[].password` is independent of `auth_method`, so you can use server PASS together with `auth_method: nickserv` (or `authserv`/`q`/`userserv`).
+
+### Auth troubleshooting
+
+- If your network needs both server PASS and services login, set both `servers[].password` and a service `auth_method` (`nickserv`, `authserv`, `q`, or `userserv`).
+- Use `auth_method: server_password` only when PASS is your only required auth step.
+- On successful registration you should see: `Registered on <server> as <nick>`.
+- After account login (via SASL success or account-notify/900), you should see: `Logged in as services account: <account>`.
+- If you only see registration but never see the services-account log line, verify `auth.nickserv_password`, `auth.auth_method`, and service availability on that network.
 
 ---
 

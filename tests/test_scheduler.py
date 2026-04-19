@@ -7,10 +7,9 @@ from datetime import datetime, timezone
 
 import pytest
 
+from pybot import plugin as plugin_api
 from pybot.core.scheduler import Scheduler, next_cron_time, parse_cron
 from pybot.plugin import IntervalHandler
-from pybot import plugin as plugin_api
-
 
 # ---------------------------------------------------------------------------
 # Cron parser

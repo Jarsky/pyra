@@ -87,16 +87,37 @@ class IRCMessage:
     @property
     def ctcp_command(self) -> str | None:
         """Returns the CTCP command if this is a CTCP message, else None."""
-        if self.command in ("PRIVMSG", "NOTICE") and self.text.startswith("\x01"):
-            body = self.text.strip("\x01")
-            return body.split(" ", 1)[0]
+        if self.command in ("PRIVMSG", "NOTICE"):
+            text = self.text
+            # Require fully framed CTCP payload (SOH ... SOH).
+            if len(text) < 2 or not (text.startswith("\x01") and text.endswith("\x01")):
+                return None
+
+            body = text[1:-1]
+            # Nested SOH indicates malformed framing; ignore safely.
+            if not body or "\x01" in body:
+                return None
+
+            body = body.strip()
+            if not body:
+                return None
+
+            # Split on any whitespace between command and payload.
+            command = body.split(None, 1)[0].strip()
+            return command or None
         return None
 
     @property
     def ctcp_text(self) -> str:
         """Returns CTCP payload (after command), or empty string."""
-        if self.ctcp_command and " " in self.text.strip("\x01"):
-            return self.text.strip("\x01").split(" ", 1)[1]
+        command = self.ctcp_command
+        if not command:
+            return ""
+
+        body = self.text[1:-1].strip()
+        parts = body.split(None, 1)
+        if len(parts) == 2:
+            return parts[1]
         return ""
 
     @property

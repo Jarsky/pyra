@@ -68,6 +68,12 @@ def _dcc_reply(bot: object) -> str:
     return str(val)
 
 
+def _safe_ctcp_text(value: str, max_len: int = 160) -> str:
+    """Normalize control characters and cap payload size to avoid noisy replies."""
+    cleaned = value.replace("\r", " ").replace("\n", " ").replace("\x00", "").strip()
+    return cleaned[:max_len]
+
+
 @plugin.command("ctcpstatus", privilege="a", help="Show CTCP/DCC settings", usage="!ctcpstatus")
 async def cmd_ctcpstatus(bot: object, trigger: Trigger) -> None:
     await bot.reply(  # type: ignore[attr-defined]
@@ -82,6 +88,10 @@ async def on_privmsg_ctcp(bot: object, trigger: Trigger) -> None:
         return
 
     msg = trigger.message
+    # Never respond to inbound CTCP NOTICE frames to avoid reply loops.
+    if msg.command != "PRIVMSG":
+        return
+
     ctcp = msg.ctcp_command
     if not ctcp:
         return
@@ -93,11 +103,12 @@ async def on_privmsg_ctcp(bot: object, trigger: Trigger) -> None:
         return
 
     if ctcp == "VERSION":
-        await bot.notice(trigger.nick, f"\x01VERSION {_version_reply(bot)}\x01")  # type: ignore[attr-defined]
+        version = _safe_ctcp_text(_version_reply(bot), max_len=120)
+        await bot.notice(trigger.nick, f"\x01VERSION {version}\x01")  # type: ignore[attr-defined]
         return
 
     if ctcp == "PING":
-        payload = msg.ctcp_text.strip()
+        payload = _safe_ctcp_text(msg.ctcp_text, max_len=160)
         if payload:
             await bot.notice(trigger.nick, f"\x01PING {payload}\x01")  # type: ignore[attr-defined]
         else:
@@ -117,7 +128,8 @@ async def on_privmsg_ctcp(bot: object, trigger: Trigger) -> None:
         return
 
     if ctcp == "SOURCE":
-        await bot.notice(trigger.nick, f"\x01SOURCE {_source_url(bot)}\x01")  # type: ignore[attr-defined]
+        source_url = _safe_ctcp_text(_source_url(bot), max_len=200)
+        await bot.notice(trigger.nick, f"\x01SOURCE {source_url}\x01")  # type: ignore[attr-defined]
         return
 
     if ctcp == "DCC":
@@ -129,5 +141,5 @@ async def on_privmsg_ctcp(bot: object, trigger: Trigger) -> None:
                 "chat/file transport is not implemented\x01",
             )
         else:
-            await bot.notice(trigger.nick, _dcc_reply(bot))  # type: ignore[attr-defined]
+            await bot.notice(trigger.nick, _safe_ctcp_text(_dcc_reply(bot), max_len=220))  # type: ignore[attr-defined]
         return

@@ -137,6 +137,30 @@ def test_ctcp_action() -> None:
     assert msg.ctcp_text == "waves"
 
 
+def test_malformed_ctcp_missing_trailing_delimiter_is_ignored() -> None:
+    msg = parse(":nick!user@host PRIVMSG #channel :\x01PING 12345")
+    assert msg.ctcp_command is None
+    assert msg.ctcp_text == ""
+
+
+def test_malformed_ctcp_nested_delimiter_is_ignored() -> None:
+    msg = parse(":nick!user@host PRIVMSG #channel :\x01PING abc\x01def\x01")
+    assert msg.ctcp_command is None
+    assert msg.ctcp_text == ""
+
+
+def test_ctcp_tab_separator_parses_command_and_payload() -> None:
+    msg = parse(":nick!user@host PRIVMSG #channel :\x01PING\t12345\x01")
+    assert msg.ctcp_command == "PING"
+    assert msg.ctcp_text == "12345"
+
+
+def test_ctcp_whitespace_only_body_is_ignored() -> None:
+    msg = parse(":nick!user@host PRIVMSG #channel :\x01   \t  \x01")
+    assert msg.ctcp_command is None
+    assert msg.ctcp_text == ""
+
+
 # ---------------------------------------------------------------------------
 # IRCv3 message tags
 # ---------------------------------------------------------------------------
@@ -603,3 +627,86 @@ async def test_build_trigger_owner_account_fallback_does_not_grant_on_mismatch(
     assert trigger is not None
     assert trigger.owner is False
     assert trigger.admin is False
+
+
+@pytest.mark.asyncio
+async def test_server_pass_and_nickserv_identify_both_apply(minimal_config_dict: dict) -> None:
+    cfg_dict = dict(minimal_config_dict)
+    cfg_dict["servers"] = [dict(minimal_config_dict["servers"][0])]
+    cfg_dict["servers"][0]["password"] = "serverpass"
+    cfg_dict["channels"] = {"autojoin": ["#chat"]}
+    cfg_dict["auth"] = dict(minimal_config_dict["auth"])
+    cfg_dict["auth"]["auth_method"] = "nickserv"
+    cfg_dict["auth"]["nickserv_password"] = "nickpass"
+
+    cfg = BotConfig.model_validate(cfg_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    sent_raw: list[str] = []
+    sent_queued: list[str] = []
+
+    async def fake_send_raw(line: str) -> None:
+        sent_raw.append(line)
+
+    async def fake_send(line: str) -> None:
+        sent_queued.append(line)
+
+    conn.send_raw = fake_send_raw  # type: ignore[method-assign]
+    conn.send = fake_send  # type: ignore[method-assign]
+
+    await conn._begin_registration()
+    await conn._on_001(parse(":irc.example.com 001 TestBot :Welcome"))
+
+    assert sent_raw[0] == "CAP LS 302"
+    assert "PASS :serverpass" in sent_raw
+    assert any(line.startswith("NICK ") for line in sent_raw)
+    assert any(line.startswith("USER ") for line in sent_raw)
+    assert "JOIN #chat" in sent_queued
+    assert "PRIVMSG NickServ :IDENTIFY nickpass" in sent_queued
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("auth_method", "target", "command_text"),
+    [
+        ("authserv", "AuthServ@services.undernet.org", "AUTH svcacct nickpass"),
+        ("q", "Q@CServe.quakenet.org", "AUTH svcacct nickpass"),
+        ("userserv", "UserServ", "LOGIN svcacct nickpass"),
+    ],
+)
+async def test_server_pass_and_service_auth_variants_both_apply(
+    minimal_config_dict: dict,
+    auth_method: str,
+    target: str,
+    command_text: str,
+) -> None:
+    cfg_dict = dict(minimal_config_dict)
+    cfg_dict["servers"] = [dict(minimal_config_dict["servers"][0])]
+    cfg_dict["servers"][0]["password"] = "serverpass"
+    cfg_dict["channels"] = {"autojoin": ["#chat"]}
+    cfg_dict["auth"] = dict(minimal_config_dict["auth"])
+    cfg_dict["auth"]["auth_method"] = auth_method
+    cfg_dict["auth"]["nickserv_password"] = "nickpass"
+    cfg_dict["auth"]["sasl_username"] = "svcacct"
+
+    cfg = BotConfig.model_validate(cfg_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    sent_raw: list[str] = []
+    sent_queued: list[str] = []
+
+    async def fake_send_raw(line: str) -> None:
+        sent_raw.append(line)
+
+    async def fake_send(line: str) -> None:
+        sent_queued.append(line)
+
+    conn.send_raw = fake_send_raw  # type: ignore[method-assign]
+    conn.send = fake_send  # type: ignore[method-assign]
+
+    await conn._begin_registration()
+    await conn._on_001(parse(":irc.example.com 001 TestBot :Welcome"))
+
+    assert "PASS :serverpass" in sent_raw
+    assert "JOIN #chat" in sent_queued
+    assert f"PRIVMSG {target} :{command_text}" in sent_queued
