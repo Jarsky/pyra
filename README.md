@@ -87,9 +87,26 @@ $EDITOR .env   # set POSTGRES_PASSWORD
 # Start — config.yaml is created automatically on first run
 docker compose -f docker-compose.prod.yml up -d
 
+# PostgreSQL DB selection note:
+# docker-compose.prod.yml sets DATABASE_URL for PostgreSQL automatically,
+# so you do NOT need to change database.url in config.yaml for this stack.
+
 # Edit the generated config (server, nick, channels, etc.), then restart
 $EDITOR ../data/config.yaml
 docker compose -f docker-compose.prod.yml restart pyra
+```
+
+If you want MariaDB/MySQL instead, set the DB URL yourself (in config or env):
+
+```yaml
+database:
+  url: "mysql+aiomysql://pyra:password@db-host/pyra"
+```
+
+Or with environment override:
+
+```bash
+DATABASE_URL="mysql+aiomysql://pyra:password@db-host/pyra" pybot --config config/config.yaml
 ```
 
 ---

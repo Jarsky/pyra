@@ -77,6 +77,10 @@ database:
   # MySQL/MariaDB (alternative to PostgreSQL):
   # url: "mysql+aiomysql://pyra:password@localhost/pyra"
 
+  # Note: docker-compose.prod.yml sets DATABASE_URL for PostgreSQL automatically.
+  # That runtime env var overrides this database.url value, so no manual switch is
+  # needed in config.yaml when using the provided PostgreSQL production stack.
+
 # ─────────────────────────────────────────────────────────────
 # FLOOD PROTECTION (global defaults; override per-channel)
 # ─────────────────────────────────────────────────────────────

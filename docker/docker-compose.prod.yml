@@ -13,6 +13,8 @@ services:
       - ../plugins_extra:/plugins_extra
     environment:
       - DATA_DIR=/data
+      # In this production compose profile, DATABASE_URL forces PostgreSQL at runtime,
+      # so database.url in config.yaml can remain the default SQLite value.
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pyra}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyra}
     ports:
       - "8080:8080"
