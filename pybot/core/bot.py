@@ -441,6 +441,16 @@ class PyraBot:
                 owner = True
                 admin = True
 
+        configured_owner_account = self.config.core.owner_account.strip()
+        if (
+            not owner
+            and configured_owner_account
+            and account
+            and account.lower() == configured_owner_account.lower()
+        ):
+            owner = True
+            admin = True
+
         return Trigger(
             bot=self,
             message=msg,

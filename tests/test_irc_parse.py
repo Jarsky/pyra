@@ -569,3 +569,37 @@ async def test_welcome_clears_stale_state_on_new_session(minimal_config_dict: di
 
     assert bot.channels == {}
     assert bot._names_buffer == {}
+
+
+@pytest.mark.asyncio
+async def test_build_trigger_owner_account_fallback_grants_owner(minimal_config_dict: dict) -> None:
+    cfg_dict = dict(minimal_config_dict)
+    cfg_dict["core"] = dict(minimal_config_dict["core"])
+    cfg_dict["core"]["owner_account"] = "jarsky"
+    cfg = BotConfig.model_validate(cfg_dict)
+    bot = PyraBot(cfg)
+
+    msg = parse("@account=Jarsky :anynick!u@h PRIVMSG #test :hello")
+    trigger = await bot._build_trigger(msg, args=[], match=None)
+
+    assert trigger is not None
+    assert trigger.owner is True
+    assert trigger.admin is True
+
+
+@pytest.mark.asyncio
+async def test_build_trigger_owner_account_fallback_does_not_grant_on_mismatch(
+    minimal_config_dict: dict,
+) -> None:
+    cfg_dict = dict(minimal_config_dict)
+    cfg_dict["core"] = dict(minimal_config_dict["core"])
+    cfg_dict["core"]["owner_account"] = "jarsky"
+    cfg = BotConfig.model_validate(cfg_dict)
+    bot = PyraBot(cfg)
+
+    msg = parse("@account=otheracct :anynick!u@h PRIVMSG #test :hello")
+    trigger = await bot._build_trigger(msg, args=[], match=None)
+
+    assert trigger is not None
+    assert trigger.owner is False
+    assert trigger.admin is False
