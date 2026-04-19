@@ -404,9 +404,14 @@ class PyraBot:
             elif target.lower() == self._current_nick.lower():
                 is_pm = True
 
-        # Get account from channel state or message tag
-        account: str | None = msg.account_tag
-        if not account and channel:
+        # Prefer account-tag when explicitly present, even when unauthenticated.
+        if "account" in msg.tags:
+            tag_account = msg.tags.get("account")
+            account: str | None = None if tag_account in (None, "", "*") else tag_account
+        else:
+            account = None
+
+        if account is None and channel:
             ch = self.get_channel(channel)
             if ch:
                 ns = ch.get_nick(nick)
@@ -545,7 +550,7 @@ class PyraBot:
         nicks_str = msg.params[-1]
         buf = self._names_buffer.setdefault(channel.lower(), [])
 
-        prefix_chars = "@+%~&!"  # common mode prefix chars
+        prefix_chars = self.irc.nick_prefix_chars or "@+"
         for entry in nicks_str.split():
             # Strip mode prefixes
             while entry and entry[0] in prefix_chars:
@@ -599,7 +604,7 @@ class PyraBot:
                 setting = True
             elif char == "-":
                 setting = False
-            elif char in "ov":  # op and voice
+            elif char in self.irc.nick_prefix_modes:
                 if nick_idx < len(nicks):
                     ns = ch.get_nick(nicks[nick_idx])
                     if ns:

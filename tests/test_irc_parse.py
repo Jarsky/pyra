@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from pybot.core.bot import ChannelState, PyraBot
+from pybot.core.config import BotConfig
+from pybot.core.irc import IRCConnection
 from pybot.core.irc import IRCMessage
 
 
@@ -185,3 +188,68 @@ def test_empty_params() -> None:
     msg = parse(":server 004 bot irc.example.com")
     assert msg.command == "004"
     assert msg.params == ["bot", "irc.example.com"]
+
+
+@pytest.mark.asyncio
+async def test_isupport_prefix_chanmodes_network_parsed(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    msg = parse(
+        ":irc.example.com 005 TestBot "
+        "PREFIX=(qaohv)~&@%+ "
+        "CHANMODES=IXbeg,k,Hfjl,ACKMORTcimnprstz "
+        "NETWORK=Elements :are supported by this server"
+    )
+    await conn._on_005(msg)
+
+    assert conn.network_name == "Elements"
+    assert conn.chanmodes == "IXbeg,k,Hfjl,ACKMORTcimnprstz"
+    assert conn.mode_to_prefix["o"] == "@"
+    assert conn.prefix_to_mode["%"] == "h"
+    assert conn.nick_prefix_chars == "~&@%+"
+    assert conn.nick_prefix_modes == {"q", "a", "o", "h", "v"}
+
+
+@pytest.mark.asyncio
+async def test_names_uses_dynamic_prefix_chars(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+
+    channel = "#test"
+    bot.channels[channel.lower()] = ChannelState(name=channel)
+    bot.irc.nick_prefix_chars = "~&@%+"
+
+    names = parse(":server 353 TestBot = #test :~owner &admin @op %half +voice plain")
+    end = parse(":server 366 TestBot #test :End of /NAMES list.")
+    await bot._handle_names(names)
+    await bot._handle_end_of_names(end)
+
+    ch = bot.channels[channel.lower()]
+    assert ch.get_nick("owner") is not None
+    assert ch.get_nick("admin") is not None
+    assert ch.get_nick("op") is not None
+    assert ch.get_nick("half") is not None
+    assert ch.get_nick("voice") is not None
+    assert ch.get_nick("plain") is not None
+
+
+@pytest.mark.asyncio
+async def test_mode_uses_dynamic_prefix_modes(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+
+    channel = "#test"
+    bot.channels[channel.lower()] = ChannelState(name=channel)
+    bot.channels[channel.lower()].add_nick("alice")
+    bot.irc.nick_prefix_modes = {"q", "a", "o", "h", "v"}
+
+    await bot._handle_mode(parse(":op!u@h MODE #test +h alice"))
+    ns = bot.channels[channel.lower()].get_nick("alice")
+    assert ns is not None
+    assert "h" in ns.modes
+
+    await bot._handle_mode(parse(":op!u@h MODE #test -h alice"))
+    ns = bot.channels[channel.lower()].get_nick("alice")
+    assert ns is not None
+    assert "h" not in ns.modes

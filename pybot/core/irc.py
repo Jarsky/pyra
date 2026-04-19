@@ -223,6 +223,15 @@ class IRCConnection:
         self._caps_acked: set[str] = set()
         self._cap_negotiating = False
 
+        # ISUPPORT (005) parsed state
+        self.isupport: dict[str, str | bool] = {}
+        self.network_name: str = ""
+        self.mode_to_prefix: dict[str, str] = {"o": "@", "v": "+"}
+        self.prefix_to_mode: dict[str, str] = {"@": "o", "+": "v"}
+        self.nick_prefix_chars: str = "@+"
+        self.nick_prefix_modes: set[str] = {"o", "v"}
+        self.chanmodes: str = ""
+
         # SASL
         self._sasl_done = asyncio.Event()
 
@@ -552,7 +561,47 @@ class IRCConnection:
 
     async def _on_005(self, msg: IRCMessage) -> None:
         """ISUPPORT — server feature advertisement."""
-        pass  # Future: parse PREFIX=, CHANMODES=, etc.
+        if len(msg.params) < 2:
+            return
+
+        # 005 format: <nick> <token> <token> ... :are supported by this server
+        tokens = msg.params[1:]
+        if tokens and tokens[-1].startswith("are supported by"):
+            tokens = tokens[:-1]
+
+        for token in tokens:
+            if "=" in token:
+                key, value = token.split("=", 1)
+                self.isupport[key] = value
+
+                if key == "NETWORK":
+                    self.network_name = value
+                elif key == "CHANMODES":
+                    self.chanmodes = value
+                elif key == "PREFIX":
+                    self._apply_prefix_token(value)
+            else:
+                # Feature flag without value (e.g. SAFELIST)
+                self.isupport[token] = True
+
+    def _apply_prefix_token(self, value: str) -> None:
+        """Parse PREFIX token value in the form `(modes)prefixes`."""
+        m = re.match(r"^\(([^)]+)\)(.+)$", value)
+        if not m:
+            return
+
+        modes, prefixes = m.groups()
+        if not modes or not prefixes:
+            return
+
+        pairs = list(zip(modes, prefixes, strict=False))
+        if not pairs:
+            return
+
+        self.mode_to_prefix = {mode: prefix for mode, prefix in pairs}
+        self.prefix_to_mode = {prefix: mode for mode, prefix in pairs}
+        self.nick_prefix_modes = set(self.mode_to_prefix.keys())
+        self.nick_prefix_chars = "".join(prefix for _, prefix in pairs)
 
     async def _on_433(self, msg: IRCMessage) -> None:
         """Nick already in use — try next altnick."""
