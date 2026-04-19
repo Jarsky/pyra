@@ -198,6 +198,10 @@ See [docs/deployment.md](docs/deployment.md) for:
 
 ## Documentation
 
+For end-user and operator guides (beginner through advanced), use the GitHub Wiki:
+
+- [Pyra Wiki](https://github.com/Jarsky/pyra/wiki)
+
 - [Configuration reference](docs/config.md)
 - [Deployment guide](docs/deployment.md)
 - [Permissions reference](docs/permissions.md)

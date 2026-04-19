@@ -4,28 +4,119 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Login — Pyra IRC Bot</title>
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
-    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .login-card { width: 360px; }
+    :root {
+      --pico-primary: #49dba2;
+      --pico-primary-hover: #6df0bd;
+      --pico-primary-focus: rgba(73, 219, 162, 0.35);
+      --pico-primary-inverse: #04140f;
+      --pico-card-background-color: #0b1b17;
+      --pico-background-color: #06100e;
+      --pico-muted-border-color: #1a3a32;
+      --pico-color: #dafbee;
+      --pico-muted-color: #9ad8c3;
+      --danger-color: #ff6b6b;
+      --danger-bg: rgba(255, 107, 107, 0.14);
+    }
+    body {
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(1200px 700px at 100% -20%, rgba(73, 219, 162, 0.12), transparent 60%),
+        radial-gradient(900px 500px at -10% 120%, rgba(73, 219, 162, 0.08), transparent 60%),
+        var(--pico-background-color);
+    }
+    .login-shell {
+      width: min(460px, calc(100vw - 2rem));
+    }
+    .login-card {
+      margin: 0;
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 1rem;
+      background: rgba(11, 27, 23, 0.92);
+      box-shadow: 0 24px 45px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(8px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.7rem;
+      margin-bottom: 0.6rem;
+      color: var(--pico-primary);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .brand img {
+      width: 2.2rem;
+      height: 2.2rem;
+      object-fit: contain;
+      filter: drop-shadow(0 0 8px rgba(73, 219, 162, 0.25));
+    }
+    .subtitle {
+      text-align: center;
+      margin: 0 0 1rem;
+      color: var(--pico-muted-color);
+    }
+    .error-banner {
+      border: 1px solid rgba(255, 107, 107, 0.5);
+      border-left: 4px solid var(--danger-color);
+      border-radius: 0.6rem;
+      background: var(--danger-bg);
+      color: #ffd7d7;
+      padding: 0.65rem 0.75rem;
+      margin-bottom: 0.9rem;
+      font-size: 0.95rem;
+    }
+    input {
+      border-radius: 0.55rem;
+    }
+    button[type="submit"] {
+      width: 100%;
+      border-radius: 0.6rem;
+      font-weight: 600;
+      margin-top: 0.25rem;
+    }
+    .hint {
+      margin-top: 0.95rem;
+      font-size: 0.84rem;
+      color: var(--pico-muted-color);
+      text-align: center;
+    }
   </style>
 </head>
 <body>
-<article class="login-card">
-  <header>
-    <h2>🔥 Pyra IRC Bot</h2>
-    <p>Admin Panel Login</p>
-  </header>
-  {% if error %}
-  <p class="pico-color-red-400"><strong>{{ error }}</strong></p>
-  {% endif %}
-  <form action="/auth/login" method="post">
-    <label for="username">Username</label>
-    <input type="text" id="username" name="username" required autofocus>
-    <label for="password">Password</label>
-    <input type="password" id="password" name="password" required>
-    <button type="submit">Login</button>
-  </form>
-</article>
+<main class="login-shell">
+  <article class="login-card">
+    <header>
+      <div class="brand" aria-label="Pyra brand">
+        <img src="/static/pyra-logo.png" alt="Pyra logo">
+        <span>Pyra</span>
+      </div>
+      <h2 style="text-align:center; margin-bottom:0.35rem;">Admin Sign In</h2>
+      <p class="subtitle">Use your Pyra user credentials to access Web UI tools.</p>
+    </header>
+
+    {% if error %}
+    <div class="error-banner"><strong>Login failed:</strong> {{ error }}</div>
+    {% endif %}
+
+    <form action="/auth/login" method="post">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" required autofocus autocomplete="username">
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password">
+
+      <button type="submit">Sign In</button>
+    </form>
+
+    <p class="hint">Tip: owner uses <strong>core.owner</strong> and <strong>partyline.password</strong> on first run.</p>
+  </article>
+</main>
 </body>
 </html>
