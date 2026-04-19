@@ -309,7 +309,7 @@ class Log(Base):
     channel: Mapped[str] = mapped_column(String(128), index=True)
     nick: Mapped[str] = mapped_column(String(64))
     hostmask: Mapped[str] = mapped_column(String(256), default="")
-    event_type: Mapped[str] = mapped_column(String(16))  # PRIVMSG, JOIN, PART, KICK, MODE, QUIT
+    event_type: Mapped[str] = mapped_column(String(16))
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     logged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), index=True

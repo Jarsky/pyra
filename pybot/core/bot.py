@@ -87,7 +87,7 @@ class PyraBot:
         self.config = config
         self.channels: dict[str, ChannelState] = {}  # lowercased channel name
         self.memory: dict[str, Any] = {}  # shared plugin memory
-        self.start_time: float = time.monotonic()
+        self.start_time: float = self._monotonic()
         self._current_nick: str = config.core.nick
 
         # Subsystems — set by run() before any plugin code executes
@@ -103,6 +103,13 @@ class PyraBot:
 
         # Track names list being built during 353/366
         self._names_buffer: dict[str, list[str]] = {}
+
+        # Runtime observability thresholds (seconds) for profiling hotspots.
+        self.slow_handler_warn_seconds: float = 0.5
+        self.slow_dispatch_warn_seconds: float = 1.0
+
+    def _monotonic(self) -> float:
+        return time.monotonic()
 
     # ------------------------------------------------------------------
     # Public bot API (called by plugins via Trigger or directly)
@@ -263,12 +270,21 @@ class PyraBot:
 
     async def _dispatch(self, msg: IRCMessage) -> None:
         """Dispatch message to internal handlers then to plugins."""
+        dispatch_started = self._monotonic()
+
         # Internal handlers first
         for handler in self._internal_handlers.get(msg.command, []):
+            handler_started = self._monotonic()
             try:
                 await handler(msg)
             except Exception as exc:
                 logger.error(f"Internal handler error for {msg.command}: {exc}")
+            finally:
+                self._warn_if_slow(
+                    f"internal handler {msg.command}:{handler.__name__}",
+                    self._monotonic() - handler_started,
+                    self.slow_handler_warn_seconds,
+                )
 
         # Partyline broadcast
         if self.partyline:
@@ -279,17 +295,37 @@ class PyraBot:
         # Plugin dispatch (Phase 3+)
         await self._dispatch_to_plugins(msg)
 
+        self._warn_if_slow(
+            f"dispatch {msg.command}",
+            self._monotonic() - dispatch_started,
+            self.slow_dispatch_warn_seconds,
+        )
+
     async def _persist_log_entry(self, msg: IRCMessage) -> None:
         """Persist selected IRC events for the web log viewer."""
         event_type = msg.command.upper()
-        if event_type not in {"PRIVMSG", "JOIN", "PART", "QUIT", "KICK", "MODE", "TOPIC"}:
+        if event_type not in {
+            "PRIVMSG",
+            "NOTICE",
+            "JOIN",
+            "PART",
+            "QUIT",
+            "KICK",
+            "MODE",
+            "TOPIC",
+            "NICK",
+            "INVITE",
+        }:
             return
 
-        channel = msg.channel or (msg.params[0] if msg.params else "")
-        if event_type == "QUIT":
+        if event_type in {"QUIT", "NICK"}:
             channel = ""
+        elif event_type == "INVITE":
+            channel = msg.params[1] if len(msg.params) > 1 else ""
+        else:
+            channel = msg.channel or (msg.params[0] if msg.params else "")
 
-        message = msg.text or None
+        message = self._sanitize_log_message(msg)
         hostmask = msg.hostmask or f"{msg.nick}!{msg.user}@{msg.host}"
 
         try:
@@ -307,6 +343,28 @@ class PyraBot:
                 )
         except Exception as exc:
             logger.debug(f"Could not persist IRC log entry: {exc}")
+
+    def _sanitize_log_message(self, msg: IRCMessage) -> str | None:
+        """Redact sensitive authentication payloads before log persistence."""
+        message = msg.text or None
+        if not message or msg.command.upper() not in {"PRIVMSG", "NOTICE"}:
+            return message
+
+        target = (msg.params[0] if msg.params else "").strip().lower()
+        service = target.split("@", 1)[0]
+        if service not in {"nickserv", "authserv", "q", "userserv"}:
+            return message
+
+        stripped = message.strip()
+        upper = stripped.upper()
+        if upper.startswith("IDENTIFY"):
+            return "IDENTIFY [REDACTED]"
+        if upper.startswith("AUTH"):
+            return "AUTH [REDACTED]"
+        if upper.startswith("LOGIN"):
+            return "LOGIN [REDACTED]"
+
+        return message
 
     async def _dispatch_to_plugins(self, msg: IRCMessage) -> None:
         """Route message to plugin event handlers and command handlers."""
@@ -370,6 +428,7 @@ class PyraBot:
         msg: IRCMessage,
         trigger: Any | None = None,
     ) -> None:
+        started = self._monotonic()
         try:
             if trigger is not None:
                 await func(self, trigger)
@@ -380,6 +439,18 @@ class PyraBot:
                     await func(self, t)
         except Exception as exc:
             logger.exception(f"Plugin handler error in {func.__module__}.{func.__name__}: {exc}")
+        finally:
+            self._warn_if_slow(
+                f"plugin handler {func.__module__}.{func.__name__} ({msg.command})",
+                self._monotonic() - started,
+                self.slow_handler_warn_seconds,
+            )
+
+    def _warn_if_slow(self, label: str, elapsed: float, threshold: float) -> None:
+        if elapsed >= threshold:
+            logger.warning(
+                f"Slow handler: {label} took {elapsed:.3f}s (threshold {threshold:.3f}s)"
+            )
 
     async def _build_trigger(
         self,
