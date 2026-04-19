@@ -580,8 +580,11 @@ async def cmd_memo(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, "Usage: !memo <nick> <message>")  # type: ignore[attr-defined]
         return
 
-    await bot.services.memoserv_send(nick, message)  # type: ignore[attr-defined]
-    await bot.reply(trigger, f"Memo sent to {nick}.")  # type: ignore[attr-defined]
+    result = await bot.services.memoserv_send_checked(nick, message)  # type: ignore[attr-defined]
+    if result.ok:
+        await bot.reply(trigger, f"MemoServ: {result.message}")  # type: ignore[attr-defined]
+    else:
+        await bot.reply(trigger, f"MemoServ error: {result.message}")  # type: ignore[attr-defined]
 
 
 @plugin.command(
@@ -599,8 +602,11 @@ async def cmd_akick(bot: object, trigger: Trigger) -> None:
     channel = trigger.args[1]
 
     if action == "list":
-        await bot.services.chanserv_akick_list(channel)  # type: ignore[attr-defined]
-        await bot.reply(trigger, f"Requested AKICK list for {channel}.")  # type: ignore[attr-defined]
+        result = await bot.services.chanserv_akick_list_checked(channel)  # type: ignore[attr-defined]
+        if result.ok:
+            await bot.reply(trigger, f"ChanServ: {result.message}")  # type: ignore[attr-defined]
+        else:
+            await bot.reply(trigger, f"ChanServ error: {result.message}")  # type: ignore[attr-defined]
         return
 
     if action == "add":
@@ -609,8 +615,11 @@ async def cmd_akick(bot: object, trigger: Trigger) -> None:
             return
         mask = trigger.args[2]
         reason = " ".join(trigger.args[3:]).strip()
-        await bot.services.chanserv_akick_add(channel, mask, reason)  # type: ignore[attr-defined]
-        await bot.reply(trigger, f"AKICK added for {mask} in {channel}.")  # type: ignore[attr-defined]
+        result = await bot.services.chanserv_akick_add_checked(channel, mask, reason)  # type: ignore[attr-defined]
+        if result.ok:
+            await bot.reply(trigger, f"ChanServ: {result.message}")  # type: ignore[attr-defined]
+        else:
+            await bot.reply(trigger, f"ChanServ error: {result.message}")  # type: ignore[attr-defined]
         return
 
     if action == "del":
@@ -618,8 +627,11 @@ async def cmd_akick(bot: object, trigger: Trigger) -> None:
             await bot.reply(trigger, "Usage: !akick del <#channel> <mask>")  # type: ignore[attr-defined]
             return
         mask = trigger.args[2]
-        await bot.services.chanserv_akick_del(channel, mask)  # type: ignore[attr-defined]
-        await bot.reply(trigger, f"AKICK removed for {mask} in {channel}.")  # type: ignore[attr-defined]
+        result = await bot.services.chanserv_akick_del_checked(channel, mask)  # type: ignore[attr-defined]
+        if result.ok:
+            await bot.reply(trigger, f"ChanServ: {result.message}")  # type: ignore[attr-defined]
+        else:
+            await bot.reply(trigger, f"ChanServ error: {result.message}")  # type: ignore[attr-defined]
         return
 
     await bot.reply(trigger, "Usage: !akick <add|del|list> <#channel> [mask] [reason]")  # type: ignore[attr-defined]

@@ -8,6 +8,7 @@ the corresponding numeric replies arrive.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -16,11 +17,20 @@ if TYPE_CHECKING:
     from pybot.core.bot import PyraBot
 
 
+@dataclass
+class ServiceCommandResult:
+    ok: bool
+    message: str
+    timed_out: bool = False
+
+
 class ServicesInterface:
     def __init__(self, bot: "PyraBot") -> None:
         self._bot = bot
         # Pending futures: keyed by (service, nick) waiting for a response
         self._pending_status: dict[str, asyncio.Future[int]] = {}
+        # Pending service NOTICE waiters: (service, future)
+        self._pending_notice_waiters: list[tuple[str, asyncio.Future[str]]] = []
 
     async def nickserv_status(self, nick: str) -> int:
         """Return NickServ STATUS for nick (0-3): 0=unknown, 1=unidentified,
@@ -37,11 +47,12 @@ class ServicesInterface:
 
     def on_notice(self, source: str, text: str) -> None:
         """Call this from the bot's NOTICE handler to process service replies."""
-        if source.lower() not in ("nickserv", "chanserv", "memoserv", "hostserv"):
+        source_l = source.lower()
+        if source_l not in ("nickserv", "chanserv", "memoserv", "hostserv"):
             return
 
         # Parse NickServ STATUS reply: "STATUS <nick> <level>"
-        if source.lower() == "nickserv" and text.upper().startswith("STATUS "):
+        if source_l == "nickserv" and text.upper().startswith("STATUS "):
             parts = text.split()
             if len(parts) >= 3:
                 nick = parts[1].lower()
@@ -49,9 +60,64 @@ class ServicesInterface:
                     level = int(parts[2])
                 except ValueError:
                     level = 0
-                fut = self._pending_status.pop(nick, None)
-                if fut and not fut.done():
-                    fut.set_result(level)
+                status_fut = self._pending_status.pop(nick, None)
+                if status_fut and not status_fut.done():
+                    status_fut.set_result(level)
+
+        for wait_source, notice_fut in list(self._pending_notice_waiters):
+            if wait_source == source_l and not notice_fut.done():
+                notice_fut.set_result(text)
+                self._pending_notice_waiters.remove((wait_source, notice_fut))
+
+    async def _wait_for_service_notice(self, service: str, timeout: float = 8.0) -> str | None:
+        loop = asyncio.get_event_loop()
+        fut: asyncio.Future[str] = loop.create_future()
+        entry = (service.lower(), fut)
+        self._pending_notice_waiters.append(entry)
+
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            return None
+        finally:
+            if entry in self._pending_notice_waiters:
+                self._pending_notice_waiters.remove(entry)
+
+    def _is_service_error(self, text: str) -> bool:
+        lowered = text.lower()
+        error_markers = (
+            "error",
+            "denied",
+            "not registered",
+            "no such",
+            "failed",
+            "cannot",
+            "insufficient",
+            "invalid",
+            "isn't registered",
+            "not authorized",
+        )
+        return any(marker in lowered for marker in error_markers)
+
+    async def _request_with_notice_result(
+        self,
+        service: str,
+        command: str,
+        timeout: float = 8.0,
+    ) -> ServiceCommandResult:
+        await self._bot.irc.privmsg(service, command)
+        notice = await self._wait_for_service_notice(service, timeout=timeout)
+        if notice is None:
+            return ServiceCommandResult(
+                ok=False,
+                message=f"No response from {service} within {timeout:.0f}s.",
+                timed_out=True,
+            )
+
+        if self._is_service_error(notice):
+            return ServiceCommandResult(ok=False, message=notice)
+
+        return ServiceCommandResult(ok=True, message=notice)
 
     async def chanserv_op(self, channel: str, nick: str) -> None:
         await self._bot.irc.privmsg("ChanServ", f"OP {channel} {nick}")
@@ -65,17 +131,37 @@ class ServicesInterface:
             cmd += f" {reason}"
         await self._bot.irc.privmsg("ChanServ", cmd)
 
+    async def chanserv_akick_add_checked(
+        self,
+        channel: str,
+        mask: str,
+        reason: str = "",
+    ) -> ServiceCommandResult:
+        cmd = f"AKICK {channel} ADD {mask}"
+        if reason:
+            cmd += f" {reason}"
+        return await self._request_with_notice_result("ChanServ", cmd)
+
     async def chanserv_akick_del(self, channel: str, mask: str) -> None:
         await self._bot.irc.privmsg("ChanServ", f"AKICK {channel} DEL {mask}")
 
+    async def chanserv_akick_del_checked(self, channel: str, mask: str) -> ServiceCommandResult:
+        return await self._request_with_notice_result("ChanServ", f"AKICK {channel} DEL {mask}")
+
     async def chanserv_akick_list(self, channel: str) -> None:
         await self._bot.irc.privmsg("ChanServ", f"AKICK {channel} LIST")
+
+    async def chanserv_akick_list_checked(self, channel: str) -> ServiceCommandResult:
+        return await self._request_with_notice_result("ChanServ", f"AKICK {channel} LIST")
 
     async def chanserv_invite(self, channel: str, nick: str) -> None:
         await self._bot.irc.privmsg("ChanServ", f"INVITE {channel} {nick}")
 
     async def memoserv_send(self, nick: str, message: str) -> None:
         await self._bot.irc.privmsg("MemoServ", f"SEND {nick} {message}")
+
+    async def memoserv_send_checked(self, nick: str, message: str) -> ServiceCommandResult:
+        return await self._request_with_notice_result("MemoServ", f"SEND {nick} {message}")
 
     async def send_command(self, service: str, command: str) -> None:
         """Send an arbitrary command to a service (admin use only)."""
