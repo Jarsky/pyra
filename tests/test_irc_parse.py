@@ -370,6 +370,59 @@ async def test_whois_uses_cache_within_ttl(minimal_config_dict: dict) -> None:
 
 
 @pytest.mark.asyncio
+async def test_whois_timeout_returns_empty_result(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    sent: list[str] = []
+
+    async def fake_send(line: str) -> None:
+        sent.append(line)
+
+    conn.send = fake_send  # type: ignore[method-assign]
+
+    result = await conn.whois("Alice", timeout=0.01)
+    assert result == {}
+    assert sent == ["WHOIS Alice"]
+
+
+@pytest.mark.asyncio
+async def test_whois_cache_is_bounded(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+    conn._whois_cache_max_entries = 2
+
+    conn._whois_cache["one"] = (999999.0, {"account": "one"})
+    conn._whois_cache["two"] = (999999.0, {"account": "two"})
+
+    sent: list[str] = []
+
+    async def fake_send(line: str) -> None:
+        sent.append(line)
+
+    conn.send = fake_send  # type: ignore[method-assign]
+
+    task = asyncio.create_task(conn.whois("three"))
+    await asyncio.sleep(0)
+    await conn._on_whois_318(parse(":server 318 bot three :End of /WHOIS list."))
+    await task
+
+    assert len(conn._whois_cache) == 2
+    assert "one" not in conn._whois_cache
+
+
+@pytest.mark.asyncio
+async def test_invalidate_whois_cache_removes_entry(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+    conn._whois_cache["alice"] = (999999.0, {"account": "alice"})
+
+    conn.invalidate_whois_cache("Alice")
+
+    assert "alice" not in conn._whois_cache
+
+
+@pytest.mark.asyncio
 async def test_mode_takes_parameter_uses_chanmodes_groups(minimal_config_dict: dict) -> None:
     cfg = BotConfig.model_validate(minimal_config_dict)
     conn = IRCConnection(cfg, lambda _msg: None)
@@ -420,3 +473,22 @@ async def test_cap_del_prunes_available_and_acked(minimal_config_dict: dict) -> 
     assert "account-notify" not in conn._caps_acked
     assert "chghost" in conn._caps_available
     assert "chghost" in conn._caps_acked
+
+
+@pytest.mark.asyncio
+async def test_build_trigger_uses_whois_account_fallback_for_commands(
+    minimal_config_dict: dict,
+) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+
+    async def fake_whois(_nick: str) -> dict[str, str]:
+        return {"account": "alice_account"}
+
+    bot.whois = fake_whois  # type: ignore[method-assign]
+
+    msg = parse(":alice!u@h PRIVMSG #test :!ping")
+    trigger = await bot._build_trigger(msg, args=["dummy"], match=None)
+
+    assert trigger is not None
+    assert trigger.account == "alice_account"

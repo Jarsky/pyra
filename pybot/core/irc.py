@@ -244,6 +244,7 @@ class IRCConnection:
         self._whois_data: dict[str, dict[str, str]] = {}
         self._whois_cache: dict[str, tuple[float, dict[str, str]]] = {}
         self._whois_cache_ttl_seconds: float = 30.0
+        self._whois_cache_max_entries: int = 512
 
         # Reconnect state
         self._reconnect_delay: float = 2.0
@@ -306,7 +307,7 @@ class IRCConnection:
     async def quit(self, message: str = "Pyra IRC Bot") -> None:
         await self.send(f"QUIT :{message}")
 
-    async def whois(self, nick: str) -> dict[str, str]:
+    async def whois(self, nick: str, timeout: float = 8.0) -> dict[str, str]:
         """Send WHOIS and return a dict of collected info when 318 arrives."""
         nick_key = nick.lower()
         loop = asyncio.get_event_loop()
@@ -323,9 +324,22 @@ class IRCConnection:
         self._whois_futures[nick_key] = fut
         self._whois_data[nick_key] = {}
         await self.send(f"WHOIS {nick}")
-        result = await fut
+        try:
+            result = await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._whois_futures.pop(nick_key, None)
+            self._whois_data.pop(nick_key, None)
+            return {}
+
         self._whois_cache[nick_key] = (loop.time() + self._whois_cache_ttl_seconds, dict(result))
+        while len(self._whois_cache) > self._whois_cache_max_entries:
+            self._whois_cache.pop(next(iter(self._whois_cache)))
         return dict(result)
+
+    def invalidate_whois_cache(self, nick: str) -> None:
+        nick_key = nick.lower()
+        self._whois_cache.pop(nick_key, None)
+        self._whois_data.pop(nick_key, None)
 
     # ------------------------------------------------------------------
     # Connection lifecycle

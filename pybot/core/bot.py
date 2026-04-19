@@ -418,6 +418,13 @@ class PyraBot:
                 if ns:
                     account = ns.account
 
+        # For commands, do a WHOIS account fallback when account-tag/state is missing.
+        if account is None and args:
+            whois_data = await self.whois(nick)
+            whois_account = whois_data.get("account")
+            if whois_account:
+                account = whois_account
+
         # Determine admin/owner status
         from pybot.core.database import get_session
         from pybot.core.permissions import has_flag
@@ -426,8 +433,8 @@ class PyraBot:
         owner = False
         try:
             async with get_session() as session:
-                owner = await has_flag(session, hostmask, "n")
-                admin = owner or await has_flag(session, hostmask, "a")
+                owner = await has_flag(session, hostmask, "n", account=account)
+                admin = owner or await has_flag(session, hostmask, "a", account=account)
         except Exception:
             # DB may not be initialised yet
             if nick == self.config.core.owner:
@@ -528,6 +535,8 @@ class PyraBot:
     async def _handle_nick(self, msg: IRCMessage) -> None:
         old_nick = msg.nick
         new_nick = msg.text
+        self.irc.invalidate_whois_cache(old_nick)
+        self.irc.invalidate_whois_cache(new_nick)
         if old_nick.lower() == self._current_nick.lower():
             self._current_nick = new_nick
             logger.info(f"Nick changed to {new_nick}")
@@ -712,6 +721,7 @@ class PyraBot:
     async def _handle_account(self, msg: IRCMessage) -> None:
         """account-notify cap — user's account changed."""
         nick = msg.nick
+        self.irc.invalidate_whois_cache(nick)
         account = msg.params[0] if msg.params else None
         if account == "*":
             account = None
@@ -723,6 +733,7 @@ class PyraBot:
     async def _handle_chghost(self, msg: IRCMessage) -> None:
         """chghost cap — user's host changed."""
         nick = msg.nick
+        self.irc.invalidate_whois_cache(nick)
         new_user = msg.params[0] if msg.params else ""
         new_host = msg.params[1] if len(msg.params) > 1 else ""
         for ch in self.channels.values():
