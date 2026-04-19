@@ -1,6 +1,6 @@
 [project]
 name = "pyra"
-version = "0.1.0"
+version = "1.0.0"
 description = "Modern Python IRC bot inspired by Sopel and Eggdrop"
 authors = [{name = "Jarsky", email = "jarskynz@gmail.com"}]
 requires-python = ">=3.12"
