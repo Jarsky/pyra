@@ -521,17 +521,34 @@ class IRCConnection:
         for channel in self._config.channels.autojoin:
             await self.join(channel)
 
-        # NickServ identify fallback
+        # Service authentication
         auth = self._config.auth
-        if auth.nickserv_identify and auth.nickserv_password.get_secret_value():
-            await self.privmsg(
-                "NickServ",
-                f"IDENTIFY {auth.nickserv_password.get_secret_value()}",
-            )
+        method = auth.auth_method
+        password = auth.nickserv_password.get_secret_value()
+
+        if method == "nickserv" and password:
+            await self.privmsg("NickServ", f"IDENTIFY {password}")
+        elif method == "authserv" and password:
+            username = auth.sasl_username or self._config.core.nick
+            await self.privmsg("AuthServ@services.undernet.org", f"AUTH {username} {password}")
+        elif method == "q" and password:
+            username = auth.sasl_username or self._config.core.nick
+            await self.privmsg("Q@CServe.quakenet.org", f"AUTH {username} {password}")
+        elif method == "userserv" and password:
+            username = auth.sasl_username or self._config.core.nick
+            await self.privmsg("UserServ", f"LOGIN {username} {password}")
+        elif method == "server_password" and password:
+            # Already sent as PASS during connection; nothing further needed.
+            pass
+        # "sasl" and "none" require no post-001 action
 
         # Anope HostServ vhost
         if self._config.services.enabled and self._config.services.vhost:
             await self.privmsg("HostServ", f"ON {self._config.services.vhost}")
+
+        # commands_on_connect — executed after auth commands are queued
+        for line in self._config.services.commands_on_connect:
+            await self.send(line)
 
     async def _on_005(self, msg: IRCMessage) -> None:
         """ISUPPORT — server feature advertisement."""

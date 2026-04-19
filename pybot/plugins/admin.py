@@ -2,8 +2,8 @@
 Admin plugin — bot administration commands (owner/admin only).
 
 Author:  Jarsky
-Version: 1.0.0
-Date:    2026-04-18
+Version: 1.1.0
+Date:    2026-04-20
 
 All commands require 'a' (admin) or 'n' (owner) flag.
 Most are designed to be used via /msg or from the partyline.
@@ -18,8 +18,9 @@ Commands:
   !adduser <nick> <flags>         Add a user with flags
   !deluser <nick>                 Remove a user
   !flags <nick> [+/-flags]        Show or modify user flags
-    !setpass <nick> <password>      Set Web UI/partyline password for a user (owner)
-    !passwd <newpassword>           Change your own Web UI/partyline password
+  !setpass <nick> <password>      Set Web UI/partyline password for a user (owner)
+  !passwd <newpassword>           Change your own Web UI/partyline password
+  !useserviceauth                 Bind your IRC services account as owner account (owner only)
 """
 
 from __future__ import annotations
@@ -29,8 +30,8 @@ import string
 
 __plugin_meta__ = {
     "author": "Jarsky",
-    "version": "1.0.0",
-    "updated": "2026-04-18",
+    "version": "1.1.0",
+    "updated": "2026-04-20",
     "description": "Bot admin commands (join, part, say, reload, quit). Owner/admin only.",
     "url": "https://github.com/Jarsky/pyra",
 }
@@ -514,6 +515,47 @@ async def cmd_services(bot: object, trigger: Trigger) -> None:
     service = trigger.args[0]
     command = " ".join(trigger.args[1:])
     await bot.say(service, command)  # type: ignore[attr-defined]
+
+
+@plugin.command(
+    "useserviceauth",
+    privilege="n",
+    help="Bind your IRC services account as the authoritative owner account",
+    usage="!useserviceauth",
+)
+async def cmd_useserviceauth(bot: object, trigger: Trigger) -> None:
+    """Persist trigger.account as the bot owner's IRC services account.
+
+    After running this command the bot will recognise the owner by their
+    services account rather than just their current nick, preventing
+    privilege escalation via nick spoofing.
+    """
+    account = trigger.account
+    if not account:
+        await bot.reply(  # type: ignore[attr-defined]
+            trigger,
+            "You are not logged in to an IRC services account. "
+            "Identify with NickServ first.",
+        )
+        return
+
+    from sqlalchemy import select
+
+    from pybot.core.database import User, get_session
+
+    async with get_session() as session:
+        result = await session.execute(select(User).where(User.nick == trigger.nick))
+        user = result.scalar_one_or_none()
+        if user is None:
+            await bot.reply(trigger, f"No user record found for '{trigger.nick}'.")  # type: ignore[attr-defined]
+            return
+        user.account = account
+
+    await bot.reply(  # type: ignore[attr-defined]
+        trigger,
+        f"Owner account bound to services account '{account}'. "
+        "The bot will now verify your identity via account name.",
+    )
 
 
 # ---------------------------------------------------------------------------

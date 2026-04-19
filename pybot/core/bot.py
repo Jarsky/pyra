@@ -16,6 +16,7 @@ from loguru import logger
 
 from pybot.core.config import BotConfig
 from pybot.core.irc import IRCConnection, IRCMessage
+from pybot.core.services import ServicesInterface
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -91,6 +92,7 @@ class PyraBot:
 
         # Subsystems — set by run() before any plugin code executes
         self.irc: IRCConnection = IRCConnection(config, self._on_irc_message)
+        self.services: ServicesInterface = ServicesInterface(self)
         self.scheduler: "Scheduler | None" = None
         self.plugin_loader: "PluginLoader | None" = None
         self.partyline: "PartylineServer | None" = None
@@ -468,7 +470,13 @@ class PyraBot:
             "MODE": [self._handle_mode],
             "ACCOUNT": [self._handle_account],
             "CHGHOST": [self._handle_chghost],
+            "NOTICE": [self._handle_notice],
         }
+
+    async def _handle_notice(self, msg: IRCMessage) -> None:
+        """Route NOTICE events to the services interface for service replies."""
+        source = msg.nick or (msg.prefix or "").split("!")[0]
+        self.services.on_notice(source, msg.text)
 
     async def _handle_join(self, msg: IRCMessage) -> None:
         channel = msg.params[0] if msg.params else msg.text

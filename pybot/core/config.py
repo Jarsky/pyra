@@ -68,9 +68,18 @@ class ServerConfig(BaseModel):
 
 
 class AuthConfig(BaseModel):
+    # Primary auth method used after registration.
+    # sasl uses the sasl_mechanism field; nickserv/authserv/q/userserv send
+    # a PRIVMSG to the respective service with the nickserv_password.
+    # server_password sends it as the server PASS during connection.
+    # none disables service authentication entirely.
+    auth_method: Literal[
+        "sasl", "nickserv", "authserv", "q", "userserv", "server_password", "none"
+    ] = "none"
     sasl_mechanism: Literal["PLAIN", "EXTERNAL", "SCRAM-SHA-256", "none"] = "none"
     sasl_username: str = ""
     sasl_password: SecretStr = SecretStr("")
+    # Kept for backwards compatibility — equivalent to auth_method = "nickserv"
     nickserv_identify: bool = False
     nickserv_password: SecretStr = SecretStr("")
     certfile: str = ""
@@ -80,6 +89,9 @@ class AuthConfig(BaseModel):
     def validate_external_cert(self) -> "AuthConfig":
         if self.sasl_mechanism == "EXTERNAL" and not self.certfile:
             raise ValueError("certfile is required when sasl_mechanism is EXTERNAL")
+        # Normalise legacy nickserv_identify bool to auth_method
+        if self.nickserv_identify and self.auth_method == "none":
+            self.auth_method = "nickserv"
         return self
 
 
@@ -139,6 +151,8 @@ class ServicesConfig(BaseModel):
     enabled: bool = False
     chanserv_op: bool = True
     vhost: str = ""
+    # Raw IRC lines to send after registration and auth settle (e.g. "MODE botnick +x")
+    commands_on_connect: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

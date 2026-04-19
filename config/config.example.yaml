@@ -41,10 +41,11 @@ servers:
 # AUTHENTICATION (SASL / NickServ)
 # ─────────────────────────────────────────────────────────────
 auth:
+  auth_method: "none"           # none | sasl | nickserv | authserv | q | userserv | server_password
   sasl_mechanism: "PLAIN"         # PLAIN | EXTERNAL | SCRAM-SHA-256 | none
   sasl_username: ""               # Usually your NickServ account name
   sasl_password: ""               # NickServ / SASL password
-  nickserv_identify: false        # Fall back to NickServ IDENTIFY if no SASL
+  nickserv_identify: false        # Legacy alias for auth_method: "nickserv"
   nickserv_password: ""
   certfile: ""                    # Path to client cert PEM (for EXTERNAL)
   keyfile: ""                     # Path to client key PEM (for EXTERNAL)
@@ -192,3 +193,4 @@ services:
   enabled: false
   chanserv_op: true              # Request ChanServ op on join
   vhost: ""                      # HostServ vhost to set on connect
+  commands_on_connect: []        # Raw IRC commands sent after 001/auth (advanced)

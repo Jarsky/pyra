@@ -26,6 +26,7 @@ Admin auth note:
 - Owner can add a user and auto-send credentials with `!adduser <nick!user@host> <flags>`.
 - Owner can also set one manually with `!setpass <nick> <password>`.
 - Admins can rotate their own with `!passwd <newpassword>`.
+- Owner can bind services-account identity with `!useserviceauth` for stronger account-based auth.
 
 CTCP/DCC compatibility:
 

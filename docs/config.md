@@ -41,10 +41,17 @@ servers:
 
 ```yaml
 auth:
-  method: none             # none | nickserv | sasl_plain | sasl_external | sasl_scram
-  nickserv_password: ""    # NickServ password (also used for sasl_plain/sasl_scram)
+  auth_method: none        # none | sasl | nickserv | authserv | q | userserv | server_password
+  nickserv_password: ""    # Service auth password (NickServ/AuthServ/Q/UserServ)
   sasl_mechanism: PLAIN    # PLAIN | EXTERNAL | SCRAM-SHA-256
+  sasl_username: ""        # Optional account/login name for service auth commands
+  nickserv_identify: false # Legacy alias for auth_method: nickserv
 ```
+
+Notes:
+- `auth_method: sasl` uses CAP/SASL negotiation and does not send a post-connect IDENTIFY.
+- `auth_method: server_password` uses the server PASS value during registration.
+- `auth_method: authserv`, `q`, and `userserv` send service-specific AUTH/LOGIN commands after 001.
 
 ---
 
@@ -155,10 +162,13 @@ Anope integration (optional):
 ```yaml
 services:
   enabled: false
-  nickserv_nick: NickServ
-  chanserv_nick: ChanServ
-  memoserv_nick: MemoServ
+  chanserv_op: true
+  vhost: ""
+  commands_on_connect: []  # Raw IRC lines queued after registration/auth
 ```
+
+`commands_on_connect` is useful for advanced setups that need custom startup lines
+without writing a plugin.
 
 ---
 
