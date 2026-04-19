@@ -5,8 +5,8 @@
 # Pyra — Modern Python IRC Bot
 
 <p align="center">
-  <b>A powerful, extensible, and production-ready IRC bot built with modern Python.</b><br>
-  Built with asyncio, FastAPI, SQLAlchemy, and HTMX.
+  <b>The IRC bot that is easy to start, simple to run, and powerful when you need it.</b><br>
+  Start in minutes with Docker, then grow into advanced automation, moderation, and admin workflows.
 </p>
 
 ![CI](https://img.shields.io/github/actions/workflow/status/Jarsky/pyra/ci.yml?branch=main)
@@ -15,18 +15,22 @@
 
 ---
 
-## Features
+## Why Pyra
 
-- **Full IRC/IRCv3 support** — TLS, SASL (PLAIN/EXTERNAL/SCRAM-SHA-256), CAP negotiation, flood protection
-- **Async throughout** — single asyncio event loop, no threads
-- **Plugin system** — decorator-based API, hot reload via SIGHUP/watchdog, plus Web UI upload and skeleton creation
-- **15 built-in plugins** — admin, adminchannel, antispam, calc, choose, ctcp, dice, greet, help, karma, notes, search, seen, tell, uptime
-- **Optional extras in plugins_extra/** — headlines, weather, url, arrnotify, invite, movies, lastfm, and more
-- **Eggdrop-style permissions** — `n/a/o/v/b/I/X` flags, per-channel overrides, hostmask wildcards
-- **Web admin UI** — FastAPI + Jinja2 + HTMX, no Node/React required
-- **Partyline** — telnet admin console with multi-user chat, live IRC stream
-- **Database** — SQLAlchemy 2.x async, SQLite default, PostgreSQL optional
-- **Docker-ready** — Dockerfile, Compose files for both SQLite and PostgreSQL variants
+- **Fast start, low setup stress** - run with Docker and get a working bot quickly.
+- **Beginner-friendly, power-user ready** - great defaults for simple bots, deep controls when you need them.
+- **Flexible plugin system** - use built-ins now, add your own custom commands later.
+- **Modern web admin panel** - manage channels, users, plugins, and logs from your browser.
+- **Reliable for real communities** - moderation tools, permissions, and production deployment support.
+- **Runs where you want** - SQLite by default, PostgreSQL optional, native or container deployment.
+
+## What You Get Out Of The Box
+
+- **15 built-in plugins** for moderation, utility, notes, search, seen/tell, uptime, and more.
+- **Optional extra plugins** in `plugins_extra/` including headlines, weather, URL tools, and media helpers.
+- **Strong IRC support** including IRCv3, TLS, SASL auth, and connection flood protection.
+- **Live admin workflows** with both a web UI and partyline console.
+- **Hot-reload support** so plugin updates do not require full bot restarts.
 
 ---
 
@@ -46,26 +50,44 @@
 
 ### Basic Docker (recommended)
 
+Linux/macOS:
+
 ```bash
 git clone https://github.com/Jarsky/pyra.git
-cd pyra/docker
+cd pyra
 
-# Start — config.yaml is created automatically on first run
-docker compose up -d
+# Start (creates data/config.yaml on first run)
+docker compose -f docker/docker-compose.yml up -d
 
-# Edit the generated config, then restart
-$EDITOR ../data/config.yaml
-docker compose restart pyra
+# Edit config, then restart
+nano data/config.yaml
+docker compose -f docker/docker-compose.yml restart pyra
+```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/Jarsky/pyra.git
+cd pyra
+
+# Start (creates data/config.yaml on first run)
+docker compose -f docker/docker-compose.yml up -d
+
+# Edit config, then restart
+notepad data/config.yaml
+docker compose -f docker/docker-compose.yml restart pyra
 ```
 
 ### Native install
+
+Linux/macOS:
 
 ```bash
 git clone https://github.com/Jarsky/pyra.git
 cd pyra
 
 python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -e "."
 
 # Interactive setup wizard
@@ -75,25 +97,63 @@ pybot-setup
 pybot --config config/config.yaml
 ```
 
-### Advanced Docker (PostgreSQL + Docker)
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/Jarsky/pyra.git
+cd pyra
+
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -e "."
+
+# Interactive setup wizard
+pybot-setup
+
+# Start the bot
+pybot --config config/config.yaml
+```
+
+### Advanced Docker (PostgreSQL)
+
+Linux/macOS:
 
 ```bash
-cd pyra/docker
+git clone https://github.com/Jarsky/pyra.git
+cd pyra
 
 # Set the database password (only required secret)
-cp .env.example .env
-$EDITOR .env   # set POSTGRES_PASSWORD
+cp docker/.env.example docker/.env
+nano docker/.env
 
-# Start — config.yaml is created automatically on first run
-docker compose -f docker-compose.prod.yml up -d
+# Start (creates data/config.yaml on first run)
+docker compose -f docker/docker-compose.prod.yml up -d
 
 # PostgreSQL DB selection note:
 # docker-compose.prod.yml sets DATABASE_URL for PostgreSQL automatically,
 # so you do NOT need to change database.url in config.yaml for this stack.
 
 # Edit the generated config (server, nick, channels, etc.), then restart
-$EDITOR ../data/config.yaml
-docker compose -f docker-compose.prod.yml restart pyra
+nano data/config.yaml
+docker compose -f docker/docker-compose.prod.yml restart pyra
+```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/Jarsky/pyra.git
+cd pyra
+
+# Set the database password (only required secret)
+Copy-Item docker/.env.example docker/.env
+notepad docker/.env
+
+# Start (creates data/config.yaml on first run)
+docker compose -f docker/docker-compose.prod.yml up -d
+
+# Edit config, then restart
+notepad data/config.yaml
+docker compose -f docker/docker-compose.prod.yml restart pyra
 ```
 
 If you want MariaDB/MySQL instead, set the DB URL yourself (in config or env):
@@ -121,9 +181,18 @@ pybot-setup
 
 Or copy and edit the example manually:
 
+Linux/macOS:
+
 ```bash
 cp config/config.example.yaml config/config.yaml
-$EDITOR config/config.yaml
+nano config/config.yaml
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item config/config.example.yaml config/config.yaml
+notepad config/config.yaml
 ```
 
 See [docs/config.md](docs/config.md) for full reference.
