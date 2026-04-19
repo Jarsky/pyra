@@ -24,6 +24,8 @@ Commands:
     !jobs list                      Show scheduler jobs
     !jobs pause <plugin.func>       Pause a scheduler job
     !jobs resume <plugin.func>      Resume a scheduler job
+    !memo <nick> <message>          Send a MemoServ memo
+    !akick <add|del|list> ...       Manage ChanServ AKICK entries
 """
 
 from __future__ import annotations
@@ -559,6 +561,68 @@ async def cmd_jobs(bot: object, trigger: Trigger) -> None:
         return
 
     await bot.reply(trigger, "Usage: !jobs <list|pause|resume> [plugin.func]")  # type: ignore[attr-defined]
+
+
+@plugin.command(
+    "memo",
+    privilege="a",
+    help="Send a memo via MemoServ",
+    usage="!memo <nick> <message>",
+)
+async def cmd_memo(bot: object, trigger: Trigger) -> None:
+    if len(trigger.args) < 2:
+        await bot.reply(trigger, "Usage: !memo <nick> <message>")  # type: ignore[attr-defined]
+        return
+
+    nick = trigger.args[0]
+    message = " ".join(trigger.args[1:]).strip()
+    if not message:
+        await bot.reply(trigger, "Usage: !memo <nick> <message>")  # type: ignore[attr-defined]
+        return
+
+    await bot.services.memoserv_send(nick, message)  # type: ignore[attr-defined]
+    await bot.reply(trigger, f"Memo sent to {nick}.")  # type: ignore[attr-defined]
+
+
+@plugin.command(
+    "akick",
+    privilege="a",
+    help="Manage ChanServ AKICK list",
+    usage="!akick <add|del|list> <#channel> [mask] [reason]",
+)
+async def cmd_akick(bot: object, trigger: Trigger) -> None:
+    if len(trigger.args) < 2:
+        await bot.reply(trigger, "Usage: !akick <add|del|list> <#channel> [mask] [reason]")  # type: ignore[attr-defined]
+        return
+
+    action = trigger.args[0].lower()
+    channel = trigger.args[1]
+
+    if action == "list":
+        await bot.services.chanserv_akick_list(channel)  # type: ignore[attr-defined]
+        await bot.reply(trigger, f"Requested AKICK list for {channel}.")  # type: ignore[attr-defined]
+        return
+
+    if action == "add":
+        if len(trigger.args) < 3:
+            await bot.reply(trigger, "Usage: !akick add <#channel> <mask> [reason]")  # type: ignore[attr-defined]
+            return
+        mask = trigger.args[2]
+        reason = " ".join(trigger.args[3:]).strip()
+        await bot.services.chanserv_akick_add(channel, mask, reason)  # type: ignore[attr-defined]
+        await bot.reply(trigger, f"AKICK added for {mask} in {channel}.")  # type: ignore[attr-defined]
+        return
+
+    if action == "del":
+        if len(trigger.args) < 3:
+            await bot.reply(trigger, "Usage: !akick del <#channel> <mask>")  # type: ignore[attr-defined]
+            return
+        mask = trigger.args[2]
+        await bot.services.chanserv_akick_del(channel, mask)  # type: ignore[attr-defined]
+        await bot.reply(trigger, f"AKICK removed for {mask} in {channel}.")  # type: ignore[attr-defined]
+        return
+
+    await bot.reply(trigger, "Usage: !akick <add|del|list> <#channel> [mask] [reason]")  # type: ignore[attr-defined]
 
 
 @plugin.command(

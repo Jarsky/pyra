@@ -68,6 +68,12 @@ class ServicesInterface:
     async def chanserv_akick_del(self, channel: str, mask: str) -> None:
         await self._bot.irc.privmsg("ChanServ", f"AKICK {channel} DEL {mask}")
 
+    async def chanserv_akick_list(self, channel: str) -> None:
+        await self._bot.irc.privmsg("ChanServ", f"AKICK {channel} LIST")
+
+    async def chanserv_invite(self, channel: str, nick: str) -> None:
+        await self._bot.irc.privmsg("ChanServ", f"INVITE {channel} {nick}")
+
     async def memoserv_send(self, nick: str, message: str) -> None:
         await self._bot.irc.privmsg("MemoServ", f"SEND {nick} {message}")
 

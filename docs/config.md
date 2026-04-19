@@ -169,12 +169,19 @@ Anope integration (optional):
 services:
   enabled: false
   chanserv_op: true
+  channel_guard: false
+  channel_guard_reinvite: true
+  channel_guard_reop: true
   vhost: ""
   commands_on_connect: []  # Raw IRC lines queued after registration/auth
 ```
 
 `commands_on_connect` is useful for advanced setups that need custom startup lines
 without writing a plugin.
+
+If `channel_guard` is enabled, Pyra can ask ChanServ to recover channel access for
+the bot after a kick and when bot op mode is removed. Use `channel_guard_reinvite`
+and `channel_guard_reop` to control those actions.
 
 ---
 

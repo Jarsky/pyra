@@ -28,6 +28,7 @@ Admin auth note:
 - Admins can rotate their own with `!passwd <newpassword>`.
 - Owner can bind services-account identity with `!useserviceauth` for stronger account-based auth.
 - Admins can inspect and control scheduler tasks with `!jobs list`, `!jobs pause <plugin.func>`, and `!jobs resume <plugin.func>`.
+- Admins can send MemoServ and ChanServ AKICK commands with `!memo <nick> <message>` and `!akick <add|del|list> ...`.
 
 CTCP/DCC compatibility:
 

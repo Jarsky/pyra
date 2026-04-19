@@ -195,5 +195,8 @@ plugins:
 services:
   enabled: false
   chanserv_op: true              # Request ChanServ op on join
+  channel_guard: false           # Ask ChanServ for recovery actions after kick/deop
+  channel_guard_reinvite: true   # Request ChanServ INVITE after bot is kicked
+  channel_guard_reop: true       # Request ChanServ OP after kick/deop of bot
   vhost: ""                      # HostServ vhost to set on connect
   commands_on_connect: []        # Raw IRC commands sent after 001/auth (advanced)

@@ -534,6 +534,11 @@ class PyraBot:
         kicked = msg.params[1] if len(msg.params) > 1 else ""
         if kicked.lower() == self._current_nick.lower():
             self.channels.pop(channel.lower(), None)
+            if self.config.services.enabled and self.config.services.channel_guard:
+                if self.config.services.channel_guard_reinvite:
+                    await self.services.chanserv_invite(channel, self._current_nick)
+                if self.config.services.channel_guard_reop:
+                    await self.services.chanserv_op(channel, self._current_nick)
             # Auto-rejoin if configured
             await asyncio.sleep(2)
             await self.join(channel)
@@ -606,12 +611,23 @@ class PyraBot:
                 setting = False
             elif char in self.irc.nick_prefix_modes:
                 if nick_idx < len(nicks):
-                    ns = ch.get_nick(nicks[nick_idx])
+                    mode_nick = nicks[nick_idx]
+                    ns = ch.get_nick(mode_nick)
                     if ns:
                         if setting:
                             ns.modes.add(char)
                         else:
                             ns.modes.discard(char)
+
+                    if (
+                        self.config.services.enabled
+                        and self.config.services.channel_guard
+                        and char == "o"
+                        and mode_nick.lower() == self._current_nick.lower()
+                        and not setting
+                    ):
+                        if self.config.services.channel_guard_reop:
+                            await self.services.chanserv_op(target, self._current_nick)
                     nick_idx += 1
 
     async def _handle_account(self, msg: IRCMessage) -> None:

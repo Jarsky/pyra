@@ -173,6 +173,9 @@ class ServicesConfig(BaseModel):
     enabled: bool = False
     chanserv_op: bool = True
     vhost: str = ""
+    channel_guard: bool = False
+    channel_guard_reinvite: bool = True
+    channel_guard_reop: bool = True
     # Raw IRC lines to send after registration and auth settle (e.g. "MODE botnick +x")
     commands_on_connect: list[str] = Field(default_factory=list)
 

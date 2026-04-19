@@ -238,6 +238,8 @@ class IRCConnection:
         # WHOIS futures: nick -> Future resolved when 318 arrives
         self._whois_futures: dict[str, asyncio.Future[dict[str, str]]] = {}
         self._whois_data: dict[str, dict[str, str]] = {}
+        self._whois_cache: dict[str, tuple[float, dict[str, str]]] = {}
+        self._whois_cache_ttl_seconds: float = 30.0
 
         # Reconnect state
         self._reconnect_delay: float = 2.0
@@ -302,12 +304,24 @@ class IRCConnection:
 
     async def whois(self, nick: str) -> dict[str, str]:
         """Send WHOIS and return a dict of collected info when 318 arrives."""
+        nick_key = nick.lower()
         loop = asyncio.get_event_loop()
+
+        cached = self._whois_cache.get(nick_key)
+        if cached and cached[0] > loop.time():
+            return dict(cached[1])
+
+        existing = self._whois_futures.get(nick_key)
+        if existing is not None:
+            return dict(await existing)
+
         fut: asyncio.Future[dict[str, str]] = loop.create_future()
-        self._whois_futures[nick.lower()] = fut
-        self._whois_data[nick.lower()] = {}
+        self._whois_futures[nick_key] = fut
+        self._whois_data[nick_key] = {}
         await self.send(f"WHOIS {nick}")
-        return await fut
+        result = await fut
+        self._whois_cache[nick_key] = (loop.time() + self._whois_cache_ttl_seconds, dict(result))
+        return dict(result)
 
     # ------------------------------------------------------------------
     # Connection lifecycle

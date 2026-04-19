@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from pybot.core.bot import ChannelState, PyraBot
@@ -253,3 +255,57 @@ async def test_mode_uses_dynamic_prefix_modes(minimal_config_dict: dict) -> None
     ns = bot.channels[channel.lower()].get_nick("alice")
     assert ns is not None
     assert "h" not in ns.modes
+
+
+@pytest.mark.asyncio
+async def test_whois_dedup_in_flight_requests(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    sent: list[str] = []
+
+    async def fake_send(line: str) -> None:
+        sent.append(line)
+
+    conn.send = fake_send  # type: ignore[method-assign]
+
+    task1 = asyncio.create_task(conn.whois("Alice"))
+    task2 = asyncio.create_task(conn.whois("Alice"))
+    await asyncio.sleep(0)
+
+    assert sent == ["WHOIS Alice"]
+
+    await conn._on_whois_311(parse(":server 311 bot Alice user host * :Real Name"))
+    await conn._on_whois_330(parse(":server 330 bot Alice accountname :is logged in as"))
+    await conn._on_whois_318(parse(":server 318 bot Alice :End of /WHOIS list."))
+
+    result1, result2 = await asyncio.gather(task1, task2)
+    assert result1 == result2
+    assert result1["user"] == "user"
+    assert result1["host"] == "host"
+    assert result1["account"] == "accountname"
+
+
+@pytest.mark.asyncio
+async def test_whois_uses_cache_within_ttl(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    conn = IRCConnection(cfg, lambda _msg: None)
+
+    sent: list[str] = []
+
+    async def fake_send(line: str) -> None:
+        sent.append(line)
+
+    conn.send = fake_send  # type: ignore[method-assign]
+
+    task = asyncio.create_task(conn.whois("Alice"))
+    await asyncio.sleep(0)
+    await conn._on_whois_311(parse(":server 311 bot Alice user host * :Real Name"))
+    await conn._on_whois_330(parse(":server 330 bot Alice accountname :is logged in as"))
+    await conn._on_whois_318(parse(":server 318 bot Alice :End of /WHOIS list."))
+    first = await task
+
+    second = await conn.whois("Alice")
+
+    assert sent == ["WHOIS Alice"]
+    assert first == second
