@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install build twine ruff black mypy
+        pip install build twine ruff black mypy types-PyYAML
         pip install -r requirements.txt
     
     - name: Run linting checks
