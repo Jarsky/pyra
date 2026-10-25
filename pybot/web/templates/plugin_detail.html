@@ -126,10 +126,43 @@
 
 </div>
 
+{% if is_owner and settings_fields %}
+<article>
+  <header><strong>Settings</strong></header>
+  <form action="/plugins/{{ plugin_name }}/save-settings" method="post">
+    {% for f in settings_fields %}
+    <label>{{ f.name }}{% if f.help %} <small style="color:var(--muted-color);">{{ f.help }}</small>{% endif %}
+      {% if f.type == 'bool' %}
+        <input type="checkbox" name="{{ f.name }}" value="true" {% if f.value %}checked{% endif %}>
+      {% elif f.type == 'choice' %}
+        <select name="{{ f.name }}">
+          {% for c in f.choices %}<option value="{{ c }}" {% if c == f.value %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+      {% elif f.type == 'list' %}
+        <textarea name="{{ f.name }}" rows="4" placeholder="One per line">{{ f.value }}</textarea>
+      {% elif f.secret %}
+        <input type="password" name="{{ f.name }}" autocomplete="new-password"
+               placeholder="{{ 'Saved - leave blank to keep' if f.is_set else 'Not set' }}">
+      {% elif f.type in ('int', 'float') %}
+        <input type="number" name="{{ f.name }}" value="{{ f.value }}" {% if f.type == 'float' %}step="any"{% endif %}
+               {% if f.min is not none %}min="{{ f.min }}"{% endif %} {% if f.max is not none %}max="{{ f.max }}"{% endif %}>
+      {% else %}
+        <input type="text" name="{{ f.name }}" value="{{ f.value }}">
+      {% endif %}
+    </label>
+    {% endfor %}
+    <div style="display:flex;align-items:center;gap:0.7rem;margin-top:0.6rem;">
+      <label><input type="checkbox" name="reload_after" value="true"> Reload plugin after save</label>
+      <button type="submit">Save Settings</button>
+    </div>
+  </form>
+</article>
+{% endif %}
+
 {% if is_owner %}
 <div class="detail-grid" style="margin-top:0;">
   <article>
-    <header><strong>Edit Config Vars</strong></header>
+    <header><strong>{{ 'Advanced: ' if settings_fields }}Edit Config Vars (YAML)</strong></header>
     <form action="/plugins/{{ plugin_name }}/save-vars" method="post">
       <p style="margin-top:0;color:var(--muted-color);font-size:0.85rem;">YAML object stored at plugins.vars.{{ plugin_name }} in config.</p>
       <textarea class="editor-box" name="vars_yaml" rows="12">{{ vars_yaml }}</textarea>

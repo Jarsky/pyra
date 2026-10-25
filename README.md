@@ -26,7 +26,7 @@
 
 ## What You Get Out Of The Box
 
-- **15 built-in plugins** for moderation, utility, notes, search, seen/tell, uptime, and more.
+- **17 built-in plugins** for moderation, channel protection, chat history, utility, notes, search, seen/tell, uptime, and more.
 - **Optional extra plugins** in `plugins_extra/` including headlines, weather, URL tools, and media helpers.
 - **Strong IRC support** including IRCv3, TLS, SASL auth, and connection flood protection.
 - **Live admin workflows** with both a web UI and partyline console.
@@ -332,7 +332,10 @@ alembic revision --autogenerate -m "describe change"
 
 ## Built-in Plugins
 
-Included built-in plugins cover administration, moderation, antispam, utilities, notes, offline tells, and search.
+Included built-in plugins cover administration, moderation, channel protection (`changuard`: ban
+enforcement, autokick, auto-op/voice, ban expiry), antispam, `!history` to catch up on a channel,
+utilities, notes, offline tells, and search. Plugins can be loaded/unloaded (remembered across
+restarts), switched off per channel, and configured through forms in the web UI.
 Optional plugins in `plugins_extra/` include URL titles, weather, headlines, and additional integrations.
 
 See [docs/plugins.md](docs/plugins.md) for plugin details and [plugins_extra/OPTIONAL_PLUGINS.md](plugins_extra/OPTIONAL_PLUGINS.md) for optional extras.

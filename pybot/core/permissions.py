@@ -183,18 +183,34 @@ async def get_flags(
     account: str | None = None,
 ) -> set[str]:
     """Return the full set of flags an IRC identity has, optionally for a channel."""
+    global_flags, channel_flags = await get_identity_flags(session, hostmask, channel, account)
+    return global_flags | channel_flags
+
+
+async def get_identity_flags(
+    session: AsyncSession,
+    hostmask: str,
+    channel: str | None = None,
+    account: str | None = None,
+) -> tuple[set[str], set[str]]:
+    """(global flags, flags for this channel) of an IRC identity, kept apart.
+
+    Needed where a letter means different things: global 'b' is "bot", channel 'b' is
+    "banned in this channel".
+    """
     account_key = account.lower() if account else None
     channel_key = channel.lower() if channel else None
-    flags: set[str] = set()
+    global_flags: set[str] = set()
+    channel_flags: set[str] = set()
     for user in await _cached_users(session):
         by_mask = match_hostmask(user.hostmask, hostmask)
         by_account = account_key is not None and user.account == account_key
         if not (by_mask or by_account):
             continue
-        flags.update(user.global_flags)
+        global_flags.update(user.global_flags)
         if channel_key:
-            flags.update(flag for ch, flag in user.channel_flags if ch == channel_key)
-    return flags
+            channel_flags.update(flag for ch, flag in user.channel_flags if ch == channel_key)
+    return global_flags, channel_flags
 
 
 def flags_allow(flags: set[str], flag: str) -> bool:
@@ -363,12 +379,17 @@ async def add_flag(
     channel: str | None = None,
     account: str | None = None,
     granted_by: str = "",
+    nick: str | None = None,
 ) -> None:
-    """Grant a flag to the user registered with target_hostmask, creating it if needed."""
+    """Grant a flag to the user registered with target_hostmask, creating it if needed.
+
+    A new user is named nick, or the mask's nick part.
+    """
     await _check_can_change(session, actor_flags, None, flag, "grant")
     user = await find_user_by_mask(session, target_hostmask)
     if user is None:
-        nick = target_hostmask.split("!")[0] if "!" in target_hostmask else target_hostmask
+        if not nick:
+            nick = target_hostmask.split("!")[0] if "!" in target_hostmask else target_hostmask
         user = User(
             nick=nick,
             hostmask=target_hostmask,

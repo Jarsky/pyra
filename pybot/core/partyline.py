@@ -387,9 +387,9 @@ async def execute_partyline_command(
             + line_ending
             + "  .say <#chan> <message>"
             + line_ending
-            + "  .join <#chan>"
+            + "  .join <#chan> [key]   (rejoined on restart)"
             + line_ending
-            + "  .part <#chan>"
+            + "  .part <#chan> [reason] (not rejoined)"
             + line_ending
             + "  .reload               (reload config + all plugins)"
             + line_ending
@@ -423,13 +423,21 @@ async def execute_partyline_command(
         return
 
     if cmd == "join":
-        await bot.join(raw_args)
-        await send(f"Joining {raw_args}...{line_ending}")
+        words = raw_args.split()
+        if not words:
+            await send(f"Usage: .join <#chan> [key]{line_ending}")
+            return
+        await bot.join_channel(words[0], words[1] if len(words) > 1 else "")
+        await send(f"Joining {words[0]} (rejoined on restart)...{line_ending}")
         return
 
     if cmd == "part":
-        await bot.part(raw_args)
-        await send(f"Parting {raw_args}...{line_ending}")
+        words = raw_args.split(None, 1)
+        if not words:
+            await send(f"Usage: .part <#chan> [reason]{line_ending}")
+            return
+        await bot.part_channel(words[0], words[1] if len(words) > 1 else "")
+        await send(f"Parting {words[0]} (not rejoined)...{line_ending}")
         return
 
     if cmd == "reload":

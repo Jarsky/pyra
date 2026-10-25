@@ -31,6 +31,9 @@ class CoreConfig(BaseModel):
     owner: str = ""  # owner's nick: web/partyline username
     owner_account: str = ""  # services account that identifies the owner on IRC
     owner_hostmask: str = ""  # or a nick!user@host mask (not nick!*@*)
+    # Per-user command limit (owners/admins exempt): at most this many commands per window
+    command_rate_limit: int = 5  # 0 = no limit
+    command_rate_window: int = 10  # seconds
     admins: list[str] = Field(default_factory=list)
     log_level: str = "INFO"
     log_file: str = "data/logs/pyra.log"
@@ -255,6 +258,33 @@ def save_config_partial(path: Path, config: BotConfig, updates: dict[str, Any]) 
         raw = config.model_dump(mode="json")
 
     raw = _deep_merge(raw, updates)
+
+    try:
+        new_config = BotConfig.model_validate(raw)
+    except Exception as exc:
+        raise ConfigError(f"Updated configuration is invalid: {exc}") from exc
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.dump(raw, default_flow_style=False), encoding="utf-8")
+    return new_config
+
+
+def save_plugin_vars(
+    path: Path, config: BotConfig, plugin: str, values: dict[str, Any]
+) -> BotConfig:
+    """Replace plugins.vars.<plugin> with exactly these values (removed keys disappear)."""
+    if path.exists():
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    else:
+        raw = config.model_dump(mode="json")
+    plugins = raw.setdefault("plugins", {}) or {}
+    raw["plugins"] = plugins
+    plugin_vars = plugins.setdefault("vars", {}) or {}
+    plugins["vars"] = plugin_vars
+    if values:
+        plugin_vars[plugin] = values
+    else:
+        plugin_vars.pop(plugin, None)
 
     try:
         new_config = BotConfig.model_validate(raw)

@@ -26,6 +26,10 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+__plugin_config__ = {
+    "api_key": {"type": "str", "secret": True, "help": "Last.fm API key"},
+}
+
 import httpx
 
 from pybot import plugin

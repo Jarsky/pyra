@@ -422,6 +422,68 @@ async def set_channel_setting(
         session.add(ChannelSetting(channel_id=ch.id, key=key, value=value))
 
 
+_TRUE = ("true", "1", "yes", "on")
+
+
+def setting_enabled(value: str) -> bool:
+    return value.strip().lower() in _TRUE
+
+
+async def remember_channel(session: AsyncSession, channel_name: str, key: str = "") -> None:
+    """Mark a channel to be joined on every connect (stored as channel settings)."""
+    await set_channel_setting(session, channel_name, "autojoin", "true")
+    await set_channel_setting(session, channel_name, "join_key", key)
+
+
+async def forget_channel(session: AsyncSession, channel_name: str) -> None:
+    await set_channel_setting(session, channel_name, "autojoin", "false")
+
+
+async def remembered_channels(session: AsyncSession) -> list[tuple[str, str]]:
+    """(name, key) of channels marked with remember_channel."""
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(Channel.name, ChannelSetting.key, ChannelSetting.value)
+        .join(ChannelSetting)
+        .where(ChannelSetting.key.in_(("autojoin", "join_key")))
+        .order_by(Channel.name)
+    )
+    settings: dict[str, dict[str, str]] = {}
+    for name, key, value in result.all():
+        settings.setdefault(name, {})[key] = value
+    return [
+        (name, values.get("join_key", ""))
+        for name, values in settings.items()
+        if setting_enabled(values.get("autojoin", ""))
+    ]
+
+
+async def add_ban(
+    session: AsyncSession,
+    channel_name: str | None,
+    hostmask: str,
+    reason: str,
+    set_by: str,
+    expires_at: datetime | None = None,
+) -> Ban:
+    """Store a ban (channel_name None = global). The bot lifts it when it expires."""
+    from datetime import timezone
+
+    channel_id = (await get_or_create_channel(session, channel_name)).id if channel_name else None
+    ban = Ban(
+        channel_id=channel_id,
+        hostmask=hostmask,
+        reason=reason,
+        set_by=set_by,
+        set_at=datetime.now(tz=timezone.utc),
+        expires_at=expires_at,
+        active=True,
+    )
+    session.add(ban)
+    return ban
+
+
 async def get_plugin_setting(
     session: AsyncSession,
     plugin: str,

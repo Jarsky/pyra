@@ -27,6 +27,8 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+from datetime import datetime
+
 from pybot import plugin
 from pybot.plugin import Trigger
 
@@ -128,11 +130,17 @@ async def cmd_unban(bot: object, trigger: Trigger) -> None:
 
     from sqlalchemy import select
 
-    from pybot.core.database import Ban, get_session
+    from pybot.core.database import Ban, Channel, get_session
 
     async with get_session() as session:
         result = await session.execute(
-            select(Ban).where(Ban.hostmask == mask, Ban.active == True)  # noqa: E712
+            select(Ban)
+            .join(Channel)
+            .where(
+                Ban.hostmask == mask,
+                Ban.active == True,  # noqa: E712
+                Channel.name == channel.lower(),
+            )
         )
         for ban in result.scalars().all():
             ban.active = False
@@ -178,9 +186,9 @@ async def cmd_tempban(bot: object, trigger: Trigger) -> None:
 
     nick = trigger.args[0]
     try:
-        from pybot.plugins.admin import _parse_duration
+        from datetime import timezone
 
-        expires = _parse_duration(trigger.args[1])
+        expires = datetime.now(tz=timezone.utc) + plugin.parse_duration(trigger.args[1])
     except ValueError as exc:
         await bot.reply(trigger, str(exc))  # type: ignore[attr-defined]
         return
@@ -189,32 +197,9 @@ async def cmd_tempban(bot: object, trigger: Trigger) -> None:
     mask = await _resolve_ban_mask(bot, channel, nick)
     await bot.ban(channel, mask)  # type: ignore[attr-defined]
     await bot.kick(channel, nick, f"{reason} (temp ban)")  # type: ignore[attr-defined]
+    # Lifted by the changuard plugin when it expires (survives restarts)
     await _store_ban(bot, trigger, channel, mask, reason, expires_at=expires)
-
-    import asyncio
-    from datetime import datetime, timezone
-
-    delay = (expires - datetime.now(tz=timezone.utc)).total_seconds()
-    asyncio.create_task(_auto_unban(bot, channel, mask, delay))
     await bot.reply(trigger, f"Temp-banned {mask} until {expires.strftime('%H:%M UTC')}.")  # type: ignore[attr-defined]
-
-
-async def _auto_unban(bot: object, channel: str, mask: str, delay: float) -> None:
-    import asyncio
-
-    await asyncio.sleep(max(delay, 0))
-    await bot.unban(channel, mask)  # type: ignore[attr-defined]
-
-    from sqlalchemy import select
-
-    from pybot.core.database import Ban, get_session
-
-    async with get_session() as session:
-        result = await session.execute(
-            select(Ban).where(Ban.hostmask == mask, Ban.active == True)  # noqa: E712
-        )
-        for ban in result.scalars().all():
-            ban.active = False
 
 
 @plugin.command(
@@ -379,22 +364,9 @@ async def _store_ban(
     channel: str,
     mask: str,
     reason: str,
-    expires_at: object = None,
+    expires_at: datetime | None = None,
 ) -> None:
-    from datetime import datetime, timezone
-
-    from pybot.core.database import Ban, get_or_create_channel, get_session
+    from pybot.core.database import add_ban, get_session
 
     async with get_session() as session:
-        ch = await get_or_create_channel(session, channel)
-        session.add(
-            Ban(
-                channel_id=ch.id,
-                hostmask=mask,
-                reason=reason,
-                set_by=trigger.hostmask,
-                set_at=datetime.now(tz=timezone.utc),
-                expires_at=expires_at,
-                active=True,
-            )
-        )
+        await add_ban(session, channel, mask, reason, trigger.hostmask, expires_at)

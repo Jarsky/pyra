@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ class CommandHandler:
     aliases: list[str] = field(default_factory=list)
     help_text: str = ""
     usage: str = ""
+    cooldown: float = 0.0  # seconds before the same user can run it again
 
 
 @dataclass
@@ -193,6 +195,43 @@ def _set_current_plugin(name: str) -> None:
     _current_plugin = name
 
 
+def _loading() -> bool:
+    """True while the plugin loader executes a plugin module.
+
+    Decorators only register handlers then. Importing a plugin module any other way
+    (e.g. one plugin importing a helper from another) must not register its commands a
+    second time, under the wrong plugin name, so they would run twice.
+    """
+    return _current_plugin != "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers for plugins (import these rather than another plugin's module)
+# ---------------------------------------------------------------------------
+
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def parse_duration(text: str) -> timedelta:
+    """'30s', '10m', '2h', '1d', '1w' -> timedelta. Raises ValueError otherwise."""
+    value = text.strip().lower()
+    unit = _DURATION_UNITS.get(value[-1:]) if value else None
+    if unit and value[:-1].isdigit() and int(value[:-1]) > 0:
+        return timedelta(seconds=int(value[:-1]) * unit)
+    raise ValueError(f"Invalid duration: {text!r}. Use e.g. 10m, 2h, 1d")
+
+
+def format_age(seconds: int) -> str:
+    """Compact age, e.g. '45s', '12m', '3h 5m', '2d 4h'."""
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+    return f"{seconds // 86400}d {(seconds % 86400) // 3600}h"
+
+
 def command(
     name: str,
     *,
@@ -201,10 +240,16 @@ def command(
     aliases: list[str] | None = None,
     help: str = "",
     usage: str = "",
+    cooldown: float = 0,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Register a command handler. The decorated function receives (bot, trigger)."""
+    """Register a command handler. The decorated function receives (bot, trigger).
+
+    cooldown: seconds before the same user may run this command again (owners/admins exempt).
+    """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        if not _loading():
+            return func
         handler = CommandHandler(
             command=name,
             func=func,
@@ -214,6 +259,7 @@ def command(
             aliases=aliases or [],
             help_text=help or (func.__doc__ or "").strip().split("\n")[0],
             usage=usage,
+            cooldown=float(cooldown),
         )
         _registry.commands.setdefault(name, []).append(handler)
         for alias in handler.aliases:
@@ -231,6 +277,8 @@ def rule(
     """Register a regex rule handler triggered on any matching message."""
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        if not _loading():
+            return func
         _registry.rules.append(
             RuleHandler(
                 pattern=re.compile(pattern),
@@ -253,6 +301,8 @@ def event(
     """Register a handler for a raw IRC event (e.g. 'JOIN', 'PRIVMSG')."""
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        if not _loading():
+            return func
         _registry.events.setdefault(irc_command.upper(), []).append(
             EventHandler(
                 event=irc_command.upper(),
@@ -284,6 +334,8 @@ def interval(
         cron = None
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        if not _loading():
+            return func
         _registry.intervals.append(
             IntervalHandler(
                 seconds=seconds,

@@ -26,8 +26,23 @@ Applied per-channel (e.g. `#general+o`):
 |------|---------|
 | `o` | Channel op — moderation in this channel |
 | `v` | Voice — trusted in this channel |
-| `k` | Autokick on join (stored; not enforced yet) |
-| `b` | Banned from channel (stored; not enforced yet) |
+| `k` | Autokick: kickbanned on join (also works as a global flag) |
+| `b` | Banned from this channel: kickbanned on join |
+
+### Channel enforcement
+
+The built-in `changuard` plugin acts in channels where the bot has ops:
+
+- **On join**: a stored ban (from `!ban`, `!kickban`, `!tempban`, antispam) that matches, or the
+  `k`/channel `b` flag, gets the user banned and kicked. Owners are never kicked; users with `o`,
+  `a` or `n` are exempt from stored bans.
+- **Auto-op / auto-voice**: with the channel setting `autoop` (or `autovoice`) on, users with
+  the `o` (or `v`) flag, global or for that channel, get +o (or +v) when they join.
+- **When the bot is opped**, it applies the same checks to everyone already in the channel.
+- **Ban expiry**: timed bans are lifted every 30 seconds, also after a restart.
+
+Turn these on in the web UI (**Channels** → **Settings**) or with
+`!chanset autoop true`, `!chanset autovoice true`, `!chanset enforce_bans false`.
 
 ---
 
@@ -65,7 +80,7 @@ grants its flags to everyone it matches.
 ### Via IRC commands
 
 ```
-!adduser <nick!user@host> <flags>   Create a user with global flags (owner)
+!adduser <nick!user@host> <flags> [name]  Create a user with global flags (owner)
 !deluser <nick>                     Remove a user record (owner)
 !flags <nick|mask>                  Show global flags (admin)
 !flags <nick|mask> +ov-k            Add/remove global flags (admin)
@@ -74,7 +89,9 @@ grants its flags to everyone it matches.
 !ignore <mask> [duration]           Ignore a hostmask, e.g. 2h or 1d (admin)
 ```
 
-Use the mask instead of the nick when several users share a nick. Admins can't grant or
+`!adduser` needs a name when the mask's nick is a wildcard (`!adduser *!bad@spam.host k spammer`)
+and generates a web/partyline login only for `a`/`n` users. Use the mask instead of the nick
+when several users share a nick. Admins can't grant or
 remove `n` or change an owner's flags, and a change with a refused flag is not applied at all.
 
 ### Via web UI
@@ -142,7 +159,7 @@ asyncio.run(main())
 # Exempt trusted bot from antispam
 !flags goodbot +X
 
-# Mark a user as banned in #general (stored; enforcement is not implemented yet)
+# Kickban a user whenever they join #general
 !flags badnick #general +b
 ```
 

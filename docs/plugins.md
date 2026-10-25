@@ -76,6 +76,7 @@ Triggered when a user sends `!<name>` (or whatever the command prefix is).
     aliases=["w"],         # alternative command names
     help="Show weather",   # shown in !help
     usage="!weather [set] <location>",
+    cooldown=10,           # seconds before the same user may run it again (owners/admins exempt)
 )
 async def weather(bot, trigger):
     location = " ".join(trigger.args) or "Auckland"
@@ -216,11 +217,31 @@ async def cmd_query(bot, trigger):
 
 `bot.plugin_config(name)` returns an empty dict `{}` if the plugin has no vars configured, so `.get("key", default)` is always safe.
 
+### Settings form in the web UI
+
+Declare the settings your plugin reads and the web UI shows a typed form for them (owners
+only), instead of raw YAML:
+
+```python
+__plugin_config__ = {
+    "api_key": {"type": "str", "secret": True, "help": "Service API key"},
+    "units": {"type": "choice", "choices": ["metric", "imperial"], "default": "metric"},
+    "max_results": {"type": "int", "default": 5, "min": 1, "max": 20},
+    "ignore_domains": {"type": "list", "help": "One per line"},
+    "enabled": {"type": "bool", "default": True},
+}
+```
+
+Types: `str`, `int`, `float`, `bool`, `list`, `choice`. Secret values (and keys whose name
+contains key, token, secret, password or dsn) are never shown in the browser; leaving a secret
+blank keeps the saved value. Values are still stored under `plugins.vars.<plugin>`; keys
+not in the schema (e.g. nested mappings) stay editable in the YAML editor.
+
 ---
 
 ## Plugin Settings
 
-Store per-plugin configuration in the `plugin_settings` table (for *user-supplied* runtime data like saved locations, preferences):
+Store per-plugin configuration in the `plugin_settings` table (for *user-supplied* runtime data like saved locations, preferences). Pyra itself uses the keys `state` (no channel) and `enabled` (with a channel) to remember plugin load/unload and per-channel switches, so don't use those:
 
 ```python
 from pybot.core.database import get_session, get_plugin_setting, set_plugin_setting
@@ -297,14 +318,15 @@ async def setup(bot):
 Send `SIGHUP` to reload all changed plugins:
 
 ```bash
-pybot-ctl reload
-# or from partyline:
-!reload myplugin
-# or reload all:
-!reload *
+pybot-ctl reload          # all plugins (SIGHUP)
+!reload myplugin          # one plugin, from IRC
+.reload                   # config + all plugins, from the partyline
 ```
 
-The watchdog polls file mtimes every 5 seconds and auto-reloads changed plugins.
+Every 5 seconds the loader also checks the plugin directories: changed files are reloaded,
+new files are loaded (if enabled), and a file that failed to load is retried when it changes.
+A reload with an error keeps the previous version running; the error is shown by `!plugins`
+and on the web Plugins page.
 
 ---
 
@@ -320,6 +342,19 @@ plugins:
   disabled:
     - search
 ```
+
+`!load` / `!unload` (or the web UI buttons) are remembered across restarts and take precedence
+over `plugins.enabled`/`plugins.disabled`. The `admin` plugin can't be unloaded.
+
+To switch a plugin off in one channel only: `!plugin off <name> [#channel]` (channel ops), or
+untick it under **Channels → Settings** in the web UI. `!plugins` lists loaded and available
+plugins, load errors, and commands provided by more than one plugin.
+
+### Sharing code between plugins
+
+Don't import another plugin's module (`from pybot.plugins.admin import ...`): only the plugin
+loader registers a plugin's commands. Helpers meant for every plugin live in `pybot.plugin`,
+e.g. `plugin.parse_duration("10m")` and `plugin.format_age(seconds)`.
 
 ---
 

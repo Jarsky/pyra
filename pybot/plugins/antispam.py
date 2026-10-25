@@ -24,6 +24,7 @@ __plugin_meta__ = {
 
 import asyncio
 from collections import defaultdict, deque
+from datetime import timedelta
 from typing import Deque
 
 from pybot import plugin
@@ -146,33 +147,13 @@ async def _take_action(bot: object, trigger: Trigger, action: str, reason: str) 
         asyncio.create_task(_reset_escalation(nick, channel))
     else:
         # tempban: 5 minutes
-        from datetime import timedelta
-
-        from pybot.core.database import Ban, get_or_create_channel, get_session
-
         hostmask = f"*!*@{trigger.host}" if trigger.host else f"*!{trigger.user}@*"
         await bot.ban(channel, hostmask)  # type: ignore[attr-defined]
         await bot.kick(channel, nick, f"Spam/flood: {reason} (temp ban)")  # type: ignore[attr-defined]
         _escalation.pop(f"{nick}!{channel}", None)
 
-        # Store in DB + auto-unban after 5 min
-        async with get_session() as session:
-            ch = await get_or_create_channel(session, channel)
-            from datetime import datetime, timezone
-
-            expires = datetime.now(tz=timezone.utc) + timedelta(minutes=5)
-            session.add(
-                Ban(
-                    channel_id=ch.id,
-                    hostmask=hostmask,
-                    reason=f"Spam/flood: {reason}",
-                    set_by=bot.nick,  # type: ignore[attr-defined]
-                    set_at=datetime.now(tz=timezone.utc),
-                    expires_at=expires,
-                    active=True,
-                )
-            )
-        asyncio.create_task(_auto_unban(bot, channel, hostmask, 300))
+        # Stored with a 5-minute expiry; the changuard plugin lifts it (survives restarts)
+        await _store_tempban(bot, channel, hostmask, f"Spam/flood: {reason}", timedelta(minutes=5))
 
 
 async def _reset_escalation(nick: str, channel: str) -> None:
@@ -180,20 +161,22 @@ async def _reset_escalation(nick: str, channel: str) -> None:
     _escalation.pop(f"{nick}!{channel}", None)
 
 
-async def _auto_unban(bot: object, channel: str, hostmask: str, delay: float) -> None:
-    await asyncio.sleep(delay)
-    await bot.unban(channel, hostmask)  # type: ignore[attr-defined]
+async def _store_tempban(
+    bot: object, channel: str, hostmask: str, reason: str, duration: timedelta
+) -> None:
+    from datetime import datetime, timezone
 
-    from sqlalchemy import select
-
-    from pybot.core.database import Ban, get_session
+    from pybot.core.database import add_ban, get_session
 
     async with get_session() as session:
-        result = await session.execute(
-            select(Ban).where(Ban.hostmask == hostmask, Ban.active == True)  # noqa: E712
+        await add_ban(
+            session,
+            channel,
+            hostmask,
+            reason,
+            bot.nick,  # type: ignore[attr-defined]
+            datetime.now(tz=timezone.utc) + duration,
         )
-        for ban in result.scalars().all():
-            ban.active = False
 
 
 # ---------------------------------------------------------------------------
@@ -220,4 +203,4 @@ async def _on_join(bot: object, trigger: Trigger) -> None:
         # Join flood from this host
         hostmask = f"*!*@{trigger.host}"
         await bot.ban(channel, hostmask)  # type: ignore[attr-defined]
-        asyncio.create_task(_auto_unban(bot, channel, hostmask, 180))
+        await _store_tempban(bot, channel, hostmask, "Join flood", timedelta(minutes=3))

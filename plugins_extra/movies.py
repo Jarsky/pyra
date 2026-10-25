@@ -25,6 +25,10 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+__plugin_config__ = {
+    "api_key": {"type": "str", "secret": True, "help": "API key for movie lookups"},
+}
+
 import httpx
 
 from pybot import plugin

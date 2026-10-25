@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+from typing import Any
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, Request
@@ -108,6 +109,7 @@ async def channel_settings(
         "log",
         "autoop",
         "autovoice",
+        "enforce_bans",
     ]
     settings = {}
     async with get_session() as session:
@@ -123,7 +125,41 @@ async def channel_settings(
             "channel": ch,
             "channel_name": channel_name,
             "settings": settings,
+            "plugins": _channel_plugins(bot, channel_name),
         },
+    )
+
+
+def _channel_plugins(bot: Any, channel_name: str) -> list[tuple[str, bool]]:
+    """(plugin, on in this channel) for loaded plugins that can be switched off."""
+    from pybot.core.plugin_loader import PROTECTED_PLUGINS
+
+    if not bot.plugin_loader:
+        return []
+    off = {p for p, ch in bot.disabled_plugin_channels if ch == channel_name.lower()}
+    return [
+        (name, name not in off)
+        for name in sorted(bot.plugin_loader.get_loaded_plugins())
+        if name not in PROTECTED_PLUGINS
+    ]
+
+
+@router.post("/{channel_name:path}/plugins")
+async def save_channel_plugins(
+    channel_name: str,
+    request: Request,
+    username: str = Depends(get_current_user),
+) -> RedirectResponse:
+    """Checked boxes = plugin on in this channel; unchecked = off."""
+    bot = request.app.state.bot
+    form = await request.form()
+    for name, enabled in _channel_plugins(bot, channel_name):
+        wanted = f"plugin_{name}" in form
+        if wanted != enabled:
+            await bot.set_plugin_enabled_in_channel(name, channel_name, wanted)
+    return RedirectResponse(
+        url=_channel_url(channel_name, "settings", success="Channel plugins saved."),
+        status_code=303,
     )
 
 

@@ -35,6 +35,14 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+__plugin_config__ = {
+    "dsn": {"type": "str", "secret": True, "help": "mysql+aiomysql://user:pass@host:3306/db"},
+    "table": {"type": "str", "default": "users"},
+    "user_col": {"type": "str", "default": "username"},
+    "key_col": {"type": "str", "default": "irckey"},
+    "channel": {"type": "str", "help": "Channel to invite to"},
+}
+
 from pybot import plugin
 from pybot.plugin import Trigger
 

@@ -27,6 +27,15 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+__plugin_config__ = {
+    "endpoint": {
+        "type": "str",
+        "default": "https://libretranslate.com",
+        "help": "LibreTranslate server URL",
+    },
+    "api_key": {"type": "str", "secret": True, "help": "API key (if the server needs one)"},
+}
+
 import httpx
 
 from pybot import plugin

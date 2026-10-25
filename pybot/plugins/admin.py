@@ -13,9 +13,12 @@ Commands:
   !part [#channel] [reason]       Part a channel
   !say <target> <message>         Make the bot say something
   !raw <line>                     Send raw IRC line (owner only)
-  !reload [plugin]                Reload a plugin or all plugins
+  !reload <plugin>                Reload a plugin
+  !load / !unload <plugin>        Load or unload a plugin (remembered across restarts)
+  !plugin <on|off> <plugin> [#chan]  Switch a plugin on/off in one channel (channel op)
+  !plugins                        List loaded/available plugins, errors and warnings
   !quit [message]                 Disconnect and exit (owner only)
-  !adduser <nick!user@host> <flags>  Add a user with global flags (owner)
+  !adduser <nick!user@host> <flags> [name]  Add a user with global flags (owner)
   !deluser <nick>                 Remove a user (owner)
   !flags <nick|mask> [#channel] [+flags-flags]  Show or change global/channel flags
   !whois <nick>                   Show a user's record and flags
@@ -53,24 +56,31 @@ if TYPE_CHECKING:
     from pybot.core.database import User
 
 
-@plugin.command("join", privilege="a", help="Join a channel", usage="!join <#channel> [key]")
+@plugin.command(
+    "join",
+    privilege="a",
+    help="Join a channel (rejoined on restart)",
+    usage="!join <#channel> [key]",
+)
 async def cmd_join(bot: object, trigger: Trigger) -> None:
     if not trigger.args:
         await bot.reply(trigger, "Usage: !join <#channel> [key]")  # type: ignore[attr-defined]
         return
     channel = trigger.args[0]
     key = trigger.args[1] if len(trigger.args) > 1 else ""
-    await bot.join(channel, key)  # type: ignore[attr-defined]
+    await bot.join_channel(channel, key)  # type: ignore[attr-defined]
 
 
-@plugin.command("part", privilege="a", help="Leave a channel", usage="!part [#channel] [reason]")
+@plugin.command(
+    "part", privilege="a", help="Leave a channel (not rejoined)", usage="!part [#channel] [reason]"
+)
 async def cmd_part(bot: object, trigger: Trigger) -> None:
     channel = trigger.args[0] if trigger.args else trigger.channel
     reason = " ".join(trigger.args[1:]) if len(trigger.args) > 1 else "Leaving"
     if not channel:
         await bot.reply(trigger, "Usage: !part [#channel] [reason]")  # type: ignore[attr-defined]
         return
-    await bot.part(channel, reason)  # type: ignore[attr-defined]
+    await bot.part_channel(channel, reason)  # type: ignore[attr-defined]
 
 
 @plugin.command("quit", privilege="n", help="Shut down the bot", usage="!quit [message]")
@@ -98,78 +108,117 @@ async def cmd_reload(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, f"Failed to reload '{name}': {exc}")  # type: ignore[attr-defined]
 
 
-@plugin.command("load", privilege="n", help="Load a plugin", usage="!load <plugin_name_or_path>")
+@plugin.command(
+    "load", privilege="n", help="Load a plugin (remembered across restarts)", usage="!load <plugin>"
+)
 async def cmd_load(bot: object, trigger: Trigger) -> None:
-    if not trigger.args:
-        await bot.reply(trigger, "Usage: !load <plugin>")  # type: ignore[attr-defined]
+    name = await _plugin_name_arg(bot, trigger, "!load <plugin>")
+    if name is None:
         return
-    name = trigger.args[0].lower()
-    if not _PLUGIN_NAME.fullmatch(name):
-        await bot.reply(trigger, "Plugin names use letters, digits and underscores.")  # type: ignore[attr-defined]
-        return
-    if not bot.plugin_loader:  # type: ignore[attr-defined]
-        await bot.reply(trigger, "Plugin loader not available.")  # type: ignore[attr-defined]
-        return
-    from pathlib import Path
-
-    # Search in built-in and extra dirs
-    search_dirs = [Path(__file__).parent]
-    extra = getattr(bot.config.plugins, "extra_dir", "")  # type: ignore[attr-defined]
-    if extra:
-        search_dirs.append(Path(extra))
-
-    found = None
-    for d in search_dirs:
-        p = d / f"{name}.py"
-        if p.exists():
-            found = p
-            break
-
-    if not found:
-        await bot.reply(trigger, f"Plugin file '{name}.py' not found.")  # type: ignore[attr-defined]
-        return
-
+    loader = bot.plugin_loader  # type: ignore[attr-defined]
+    await loader.rescan()  # pick up a file added a moment ago
     try:
-        await bot.plugin_loader.load(name, found)  # type: ignore[attr-defined]
+        await loader.enable(name)
         await bot.reply(trigger, f"Plugin '{name}' loaded.")  # type: ignore[attr-defined]
+    except KeyError:
+        await bot.reply(trigger, f"Plugin file '{name}.py' not found.")  # type: ignore[attr-defined]
     except Exception as exc:
         await bot.reply(trigger, f"Failed to load '{name}': {exc}")  # type: ignore[attr-defined]
 
 
-@plugin.command("unload", privilege="n", help="Unload a plugin", usage="!unload <plugin>")
+@plugin.command(
+    "unload",
+    privilege="n",
+    help="Unload a plugin (remembered across restarts)",
+    usage="!unload <plugin>",
+)
 async def cmd_unload(bot: object, trigger: Trigger) -> None:
-    if not trigger.args:
-        await bot.reply(trigger, "Usage: !unload <plugin>")  # type: ignore[attr-defined]
-        return
-    name = trigger.args[0].lower()
-    if not _PLUGIN_NAME.fullmatch(name):
-        await bot.reply(trigger, "Plugin names use letters, digits and underscores.")  # type: ignore[attr-defined]
-        return
-    if not bot.plugin_loader:  # type: ignore[attr-defined]
-        await bot.reply(trigger, "Plugin loader not available.")  # type: ignore[attr-defined]
-        return
-    if name in ("admin",):
-        await bot.reply(trigger, "Cannot unload the admin plugin.")  # type: ignore[attr-defined]
+    name = await _plugin_name_arg(bot, trigger, "!unload <plugin>")
+    if name is None:
         return
     try:
-        await bot.plugin_loader.unload(name)  # type: ignore[attr-defined]
+        await bot.plugin_loader.disable(name)  # type: ignore[attr-defined]
         await bot.reply(trigger, f"Plugin '{name}' unloaded.")  # type: ignore[attr-defined]
     except Exception as exc:
         await bot.reply(trigger, f"Failed to unload '{name}': {exc}")  # type: ignore[attr-defined]
 
 
-@plugin.command("plugins", privilege="a", help="List all loaded plugins")
+@plugin.command(
+    "plugin",
+    privilege="o",
+    help="Switch a plugin on or off in one channel",
+    usage="!plugin <on|off> <plugin> [#channel]",
+)
+async def cmd_plugin(bot: object, trigger: Trigger) -> None:
+    usage = "Usage: !plugin <on|off> <plugin> [#channel]"
+    args = trigger.args
+    if len(args) < 2 or args[0].lower() not in ("on", "off"):
+        await bot.reply(trigger, usage)  # type: ignore[attr-defined]
+        return
+    turn_on, name = args[0].lower() == "on", args[1].lower()
+    channel = args[2] if len(args) > 2 else trigger.channel
+    if not channel or channel[:1] not in ("#", "&"):
+        await bot.reply(trigger, usage)  # type: ignore[attr-defined]
+        return
+    from pybot.core.plugin_loader import PROTECTED_PLUGINS
+
+    if name in PROTECTED_PLUGINS:
+        await bot.reply(trigger, f"The {name} plugin can't be switched off.")  # type: ignore[attr-defined]
+        return
+    loader = bot.plugin_loader  # type: ignore[attr-defined]
+    if not loader or name not in loader.get_available_plugins():
+        await bot.reply(trigger, f"Unknown plugin '{name}'.")  # type: ignore[attr-defined]
+        return
+    # A channel op may only manage channels they are op in (trigger.channel was checked)
+    if channel.lower() != (trigger.channel or "").lower() and not (
+        trigger.admin or await trigger.has_flag("o", channel)
+    ):
+        await bot.reply(trigger, f"You need the o flag in {channel}.")  # type: ignore[attr-defined]
+        return
+    await bot.set_plugin_enabled_in_channel(name, channel, turn_on)  # type: ignore[attr-defined]
+    state = "on" if turn_on else "off"
+    await bot.reply(trigger, f"Plugin '{name}' is now {state} in {channel}.")  # type: ignore[attr-defined]
+
+
+@plugin.command("plugins", privilege="a", help="List plugins: loaded, available, problems")
 async def cmd_plugins(bot: object, trigger: Trigger) -> None:
-    if not bot.plugin_loader:  # type: ignore[attr-defined]
+    loader = bot.plugin_loader  # type: ignore[attr-defined]
+    if not loader:
         await bot.reply(trigger, "Plugin loader not available.")  # type: ignore[attr-defined]
         return
-    loaded = bot.plugin_loader.get_loaded_plugins()  # type: ignore[attr-defined]
-    if not loaded:
-        await bot.reply(trigger, "No plugins loaded.")  # type: ignore[attr-defined]
-        return
-    await bot.notice(trigger.nick, f"Loaded plugins ({len(loaded)}):")  # type: ignore[attr-defined]
-    for name in sorted(loaded.keys()):
-        await bot.notice(trigger.nick, f"  {name}")  # type: ignore[attr-defined]
+    loaded = sorted(loader.get_loaded_plugins())
+    idle = sorted(set(loader.get_available_plugins()) - set(loaded))
+    lines = [f"Loaded ({len(loaded)}): {', '.join(loaded) or 'none'}"]
+    if idle:
+        lines.append(f"Not loaded ({len(idle)}): {', '.join(idle)}")
+    if trigger.channel:
+        off = sorted(
+            p
+            for p, ch in bot.disabled_plugin_channels  # type: ignore[attr-defined]
+            if ch == trigger.channel.lower()
+        )
+        if off:
+            lines.append(f"Off in {trigger.channel}: {', '.join(off)}")
+    for name, error in sorted(loader.get_errors().items()):
+        lines.append(f"Error in {name}: {error}")
+    for name, warnings in sorted(loader.get_warnings().items()):
+        lines.append(f"Warning for {name}: {'; '.join(warnings)}")
+    for line in lines:  # long lines are split automatically
+        await bot.notice(trigger.nick, line)  # type: ignore[attr-defined]
+
+
+async def _plugin_name_arg(bot: object, trigger: Trigger, usage: str) -> str | None:
+    if not trigger.args:
+        await bot.reply(trigger, f"Usage: {usage}")  # type: ignore[attr-defined]
+        return None
+    name = trigger.args[0].lower()
+    if not _PLUGIN_NAME.fullmatch(name):
+        await bot.reply(trigger, "Plugin names use letters, digits and underscores.")  # type: ignore[attr-defined]
+        return None
+    if not bot.plugin_loader:  # type: ignore[attr-defined]
+        await bot.reply(trigger, "Plugin loader not available.")  # type: ignore[attr-defined]
+        return None
+    return name
 
 
 @plugin.command(
@@ -320,39 +369,55 @@ async def cmd_ignores(bot: object, trigger: Trigger) -> None:
 @plugin.command(
     "adduser",
     privilege="n",
-    help="Add a user with flags",
-    usage="!adduser <nick!user@host> <flags>",
+    help="Add a user with flags (a login is generated for a/n users)",
+    usage="!adduser <nick!user@host> <flags> [name]",
 )
 async def cmd_adduser(bot: object, trigger: Trigger) -> None:
-    if len(trigger.args) < 2:
-        await bot.reply(trigger, "Usage: !adduser <nick!user@host> <flags>")  # type: ignore[attr-defined]
+    usage = "Usage: !adduser <nick!user@host> <flags> [name]"
+    if len(trigger.args) < 2 or not re.fullmatch(r"\+?[A-Za-z]+", trigger.args[1]):
+        await bot.reply(trigger, usage)  # type: ignore[attr-defined]
         return
     mask = trigger.args[0]
     flags_str = trigger.args[1].lstrip("+")
+    nick_part = mask.split("!")[0] if "!" in mask else mask
+    name = trigger.args[2] if len(trigger.args) > 2 else nick_part
+    if any(c in name for c in "*?!@"):
+        await bot.reply(  # type: ignore[attr-defined]
+            trigger, f"That mask has no fixed nick; give the user a name. {usage}"
+        )
+        return
 
     from pybot.core.database import get_session
     from pybot.core.permissions import add_flag, find_user_by_mask
     from pybot.web.auth import hash_password
 
-    nick = mask.split("!")[0] if "!" in mask else mask
-    generated_password = _generate_password()
+    # Only owners/admins can log in to the web UI and partyline
+    needs_login = bool(set(flags_str) & {"a", "n"})
+    generated_password = _generate_password() if needs_login else ""
 
     try:
         # Any refusal raises out of the session, which rolls back flags already added
         async with get_session() as session:
             for flag in flags_str:
                 await add_flag(
-                    session, _actor_flags(trigger), mask, flag, granted_by=trigger.hostmask
+                    session,
+                    _actor_flags(trigger),
+                    mask,
+                    flag,
+                    granted_by=trigger.hostmask,
+                    nick=name,
                 )
             user = await find_user_by_mask(session, mask)
-            if user is not None:
+            if user is not None and needs_login:
                 user.password_hash = hash_password(generated_password)
+            name = user.nick if user is not None else name
     except PermissionError as e:
         await bot.reply(trigger, str(e))  # type: ignore[attr-defined]
         return
 
-    await bot.reply(trigger, f"Added user {nick} with flags: {flags_str}")  # type: ignore[attr-defined]
-    await _send_new_user_credentials(bot, nick, mask, generated_password, trigger)
+    await bot.reply(trigger, f"Added user {name} [{mask}] with flags: {flags_str}")  # type: ignore[attr-defined]
+    if needs_login:
+        await _send_new_user_credentials(bot, name, mask, generated_password, trigger)
 
 
 @plugin.command(
@@ -811,16 +876,9 @@ async def cmd_useserviceauth(bot: object, trigger: Trigger) -> None:
 
 
 def _parse_duration(s: str) -> datetime:
-    from datetime import timedelta, timezone
+    from datetime import timezone
 
-    unit_map = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
-    if s[-1].lower() in unit_map:
-        try:
-            seconds = int(s[:-1]) * unit_map[s[-1].lower()]
-            return datetime.now(tz=timezone.utc) + timedelta(seconds=seconds)
-        except ValueError:
-            pass
-    raise ValueError(f"Invalid duration: {s!r}. Use e.g. 10m, 2h, 1d")
+    return datetime.now(tz=timezone.utc) + plugin.parse_duration(s)
 
 
 def _generate_password(length: int = 14) -> str:

@@ -13,7 +13,8 @@ import yaml
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from pybot.core.config import save_config_partial
+from pybot.core.config import save_plugin_vars as write_plugin_vars
+from pybot.core.plugin_schema import form_fields, masked, merge_settings, parse_form, plugin_schema
 from pybot.web.app import templates
 from pybot.web.auth import get_current_user, get_web_user_flags
 
@@ -83,6 +84,7 @@ async def plugins_list(
         plugins = []
         loaded = loader.get_loaded_plugins()
         errors = loader.get_errors()
+        warnings = loader.get_warnings()
         for name, path in sorted(loader.get_available_plugins().items()):
             cmds = []
             if name in loaded:
@@ -98,6 +100,7 @@ async def plugins_list(
                     "commands": cmds,
                     "loaded": name in loaded,
                     "error": errors.get(name, ""),
+                    "warnings": warnings.get(name, []),
                     "meta": _plugin_meta(loader, name),
                     "source": _plugin_source(str(path)),
                 }
@@ -136,6 +139,7 @@ async def plugin_detail(
                 "intervals": [],
                 "rules": [],
                 "config_vars": {},
+                "settings_fields": [],
                 "loaded": False,
                 "available": False,
                 "source": "core",
@@ -189,6 +193,8 @@ async def plugin_detail(
         ]
 
     config_vars: dict[str, Any] = bot.config.plugins.vars.get(plugin_name, {})
+    schema = plugin_schema(loader.get_module(plugin_name) if loader else None)
+    settings_fields = form_fields(schema, config_vars)
     vars_yaml = yaml.safe_dump(config_vars, sort_keys=False, default_flow_style=False)
     script_content = Path(plugin_path).read_text(encoding="utf-8") if plugin_path else ""
     script_editable = source == "extra"
@@ -205,12 +211,13 @@ async def plugin_detail(
             "events": events,
             "intervals": intervals,
             "rules": rules,
-            "config_vars": config_vars,
+            "config_vars": masked(config_vars, schema),  # never show secrets
+            "settings_fields": settings_fields,
             "loaded": loaded,
             "available": available,
             "source": source,
             "is_owner": is_owner,
-            "vars_yaml": vars_yaml,
+            "vars_yaml": vars_yaml if is_owner else "",
             "script_content": script_content,
             "script_editable": script_editable,
         },
@@ -397,11 +404,7 @@ async def save_plugin_vars(
 
     config_path = _resolve_config_path()
     try:
-        bot.config = save_config_partial(
-            config_path,
-            bot.config,
-            {"plugins": {"vars": {plugin_name: parsed}}},
-        )
+        bot.config = write_plugin_vars(config_path, bot.config, plugin_name, parsed)
     except Exception as exc:
         return RedirectResponse(
             url=f"/plugins/{plugin_name}?error={quote_plus(str(exc))}",
@@ -421,6 +424,45 @@ async def save_plugin_vars(
         url=f"/plugins/{plugin_name}?success=Plugin+vars+saved.",
         status_code=303,
     )
+
+
+@router.post("/{plugin_name}/save-settings")
+async def save_plugin_settings(
+    plugin_name: str,
+    request: Request,
+    username: str = Depends(get_current_user),
+) -> RedirectResponse:
+    """Save the typed settings form built from the plugin's __plugin_config__."""
+    bot = request.app.state.bot
+    if not await _is_owner(bot, username):
+        return RedirectResponse(
+            url=f"/plugins/{plugin_name}?error=Owner+flag+required+to+edit+plugin+settings.",
+            status_code=303,
+        )
+    schema = plugin_schema(bot.plugin_loader.get_module(plugin_name) if bot.plugin_loader else None)
+    if not schema:
+        return RedirectResponse(
+            url=f"/plugins/{plugin_name}?error=This+plugin+has+no+settings+form.", status_code=303
+        )
+    form = await request.form()
+    current: dict[str, Any] = dict(bot.config.plugins.vars.get(plugin_name, {}))
+    try:
+        values = merge_settings(current, parse_form(schema, form, current))
+        bot.config = write_plugin_vars(_resolve_config_path(), bot.config, plugin_name, values)
+    except Exception as exc:
+        return RedirectResponse(
+            url=f"/plugins/{plugin_name}?error={quote_plus(str(exc))}", status_code=303
+        )
+
+    if form.get("reload_after") and bot.plugin_loader.is_loaded(plugin_name):
+        try:
+            await bot.plugin_loader.reload(plugin_name)
+        except Exception as exc:
+            return RedirectResponse(
+                url=f"/plugins/{plugin_name}?error=Saved+but+reload+failed:+{quote_plus(str(exc))}",
+                status_code=303,
+            )
+    return RedirectResponse(url=f"/plugins/{plugin_name}?success=Settings+saved.", status_code=303)
 
 
 @router.post("/{plugin_name}/save-script")
@@ -522,7 +564,7 @@ async def load_plugin(
                     url=f"/plugins?error=Plugin+{plugin_name}+not+found.",
                     status_code=303,
                 )
-            await bot.plugin_loader.load(plugin_name, available[plugin_name])
+            await bot.plugin_loader.enable(plugin_name)  # remembered across restarts
             return RedirectResponse(
                 url=f"/plugins?success={plugin_name}+loaded+successfully.",
                 status_code=303,
@@ -549,7 +591,7 @@ async def unload_plugin(
         )
     if bot.plugin_loader:
         try:
-            await bot.plugin_loader.unload(plugin_name)
+            await bot.plugin_loader.disable(plugin_name)  # remembered across restarts
             return RedirectResponse(
                 url=f"/plugins?success={plugin_name}+unloaded.",
                 status_code=303,

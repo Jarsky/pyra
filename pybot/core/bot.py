@@ -103,7 +103,15 @@ class PyraBot:
         self._register_internal_handlers()
 
         # Track names list being built during 353/366
-        self._names_buffer: dict[str, list[str]] = {}
+        self._names_buffer: dict[str, list[tuple[str, set[str]]]] = {}
+
+        # Plugin switched off per channel: {(plugin, lowercased channel)}
+        self.disabled_plugin_channels: set[tuple[str, str]] = set()
+        # Command rate limiting: user@host -> recent command times; (command, user@host) ->
+        # time the cooldown ends; user@host -> last "slow down" notice
+        self._command_times: dict[str, list[float]] = {}
+        self._cooldowns: dict[tuple[str, str], float] = {}
+        self._rate_warned: dict[str, float] = {}
 
         # Runtime observability thresholds (seconds) for profiling hotspots.
         self.slow_handler_warn_seconds: float = 0.5
@@ -175,6 +183,27 @@ class PyraBot:
 
     async def part(self, channel: str, message: str = "") -> None:
         await self.irc.part(channel, message)
+
+    async def join_channel(self, channel: str, key: str = "") -> None:
+        """Join a channel and remember it, so it is rejoined after restarts (Eggdrop .+chan)."""
+        from pybot.core.database import get_session, remember_channel
+
+        async with get_session() as session:
+            await remember_channel(session, channel, key)
+        await self.join(channel, key)
+
+    async def part_channel(self, channel: str, message: str = "") -> None:
+        """Part a channel and stop rejoining it on restart (Eggdrop .-chan)."""
+        from pybot.core.database import forget_channel, get_session
+
+        async with get_session() as session:
+            await forget_channel(session, channel)
+        await self.part(channel, message)
+
+    def can_set_modes(self, channel: str) -> bool:
+        """True if the bot holds op (or a higher prefix) in the channel."""
+        ns = self.get_nick_in_channel(channel, self._current_nick)
+        return bool(ns and ns.modes & {"o", "a", "q", "y"})
 
     async def quit(self, message: str = "Pyra IRC Bot") -> None:
         await self.irc.quit(message)
@@ -369,8 +398,16 @@ class PyraBot:
         if msg.command in ("PRIVMSG", "NOTICE") and await self._is_ignored(base):
             return
 
+        # Plugins switched off in this channel (!plugin off) get nothing from it
+        def allowed(plugin_name: str) -> bool:
+            return base.channel is None or (
+                (plugin_name, base.channel.lower()) not in self.disabled_plugin_channels
+            )
+
         # Fire all @plugin.event(cmd) handlers
         for event_handler in event_handlers:
+            if not allowed(event_handler.plugin_name):
+                continue
             asyncio.create_task(
                 self._run_plugin_handler(event_handler.func, msg, trigger=base),
                 name=f"event-{event_handler.plugin_name}-{msg.command}",
@@ -383,15 +420,25 @@ class PyraBot:
         prefix = self.config.core.command_prefix
 
         parts = text[len(prefix) :].split() if text.startswith(prefix) else []
+
+        def runs_here(handler: Any) -> bool:
+            if not allowed(handler.plugin_name):
+                return False
+            if not handler.channels:
+                return True
+            return base.channel is not None and base.channel.lower() in {
+                c.lower() for c in handler.channels
+            }
+
+        handlers = []
         if parts:
+            handlers = [h for h in registry.commands.get(parts[0].lower(), []) if runs_here(h)]
+        if handlers and not await self._within_command_limits(base, handlers[0].command, handlers):
+            handlers = []
+        if handlers:
             cmd_name = parts[0].lower()
             args = parts[1:]
-            for command_handler in registry.commands.get(cmd_name, []):
-                if command_handler.channels and (
-                    base.channel is None
-                    or base.channel.lower() not in {c.lower() for c in command_handler.channels}
-                ):
-                    continue
+            for command_handler in handlers:
                 trigger = replace(base, args=args)
                 if command_handler.privilege:
                     if trigger.account is None:
@@ -409,6 +456,8 @@ class PyraBot:
 
         # Rule matching
         for rule_handler in registry.rules:
+            if not allowed(rule_handler.plugin_name):
+                continue
             m = rule_handler.pattern.search(text)
             if m:
                 asyncio.create_task(
@@ -417,6 +466,65 @@ class PyraBot:
                     ),
                     name=f"rule-{rule_handler.plugin_name}",
                 )
+
+    async def _within_command_limits(self, trigger: Any, command: str, handlers: list) -> bool:
+        """Per-user command rate limit and per-command cooldowns; owners/admins are exempt.
+
+        Over the limit, the user gets one notice per window and is otherwise ignored.
+        """
+        if trigger.owner or trigger.admin:
+            return True
+        now = self._monotonic()
+        who = f"{trigger.user}@{trigger.host}".lower() if trigger.host else trigger.nick.lower()
+        if len(self._command_times) > 5000:  # forget users who went quiet
+            self._command_times = {
+                k: v for k, v in self._command_times.items() if v[-1:] and now - v[-1] < 3600
+            }
+            self._cooldowns = {k: t for k, t in self._cooldowns.items() if t > now}
+
+        core = self.config.core
+        if core.command_rate_limit > 0:
+            recent = [
+                t for t in self._command_times.get(who, []) if now - t < core.command_rate_window
+            ]
+            if len(recent) >= core.command_rate_limit:
+                if now - self._rate_warned.get(who, -1e9) >= core.command_rate_window:
+                    self._rate_warned[who] = now
+                    await self.notice(
+                        trigger.nick, "Slow down: too many commands. Try again shortly."
+                    )
+                return False
+            self._command_times[who] = [*recent, now]
+
+        cooldown = max((h.cooldown for h in handlers), default=0.0)
+        if cooldown > 0:
+            ready_at = self._cooldowns.get((command, who), 0.0)
+            if now < ready_at:
+                await self.notice(
+                    trigger.nick, f"!{command} is on cooldown for {ready_at - now:.0f}s."
+                )
+                return False
+            self._cooldowns[(command, who)] = now + cooldown
+        return True
+
+    async def load_plugin_channel_states(self) -> None:
+        """Load which plugins are switched off in which channels."""
+        from pybot.core.plugin_state import get_channel_disabled
+
+        try:
+            self.disabled_plugin_channels = await get_channel_disabled()
+        except Exception as exc:
+            logger.debug(f"Could not load per-channel plugin states: {exc}")
+
+    async def set_plugin_enabled_in_channel(self, plugin: str, channel: str, enabled: bool) -> None:
+        from pybot.core.plugin_state import set_channel_enabled
+
+        await set_channel_enabled(plugin, channel, enabled)
+        key = (plugin, channel.lower())
+        if enabled:
+            self.disabled_plugin_channels.discard(key)
+        else:
+            self.disabled_plugin_channels.add(key)
 
     async def _is_ignored(self, trigger: Any) -> bool:
         if trigger.owner or not (trigger.user or trigger.host):
@@ -585,6 +693,23 @@ class PyraBot:
         self.channels.clear()
         self._names_buffer.clear()
 
+        # Config autojoin channels are joined by the IRC layer; add the remembered ones
+        await self._join_remembered_channels()
+
+    async def _join_remembered_channels(self) -> None:
+        from pybot.core.database import get_session, remembered_channels
+
+        configured = {c.split()[0].lower() for c in self.config.channels.autojoin if c.strip()}
+        try:
+            async with get_session() as session:
+                remembered = await remembered_channels(session)
+        except Exception as exc:
+            logger.debug(f"Could not load remembered channels: {exc}")
+            return
+        for name, key in remembered:
+            if name.lower() not in configured:
+                await self.join(name, key)
+
     async def _handle_notice(self, msg: IRCMessage) -> None:
         """Route NOTICE events to the services interface for service replies."""
         source = msg.nick or (msg.prefix or "").split("!")[0]
@@ -664,14 +789,21 @@ class PyraBot:
         channel = msg.params[2]
         nicks_str = msg.params[-1]
         buf = self._names_buffer.setdefault(channel.lower(), [])
-
-        prefix_chars = self.irc.nick_prefix_chars or "@+"
         for entry in nicks_str.split():
-            # Strip mode prefixes
-            while entry and entry[0] in prefix_chars:
-                entry = entry[1:]
-            if entry:
-                buf.append(entry)
+            nick, modes = self._split_prefixes(entry)
+            if nick:
+                buf.append((nick.split("!", 1)[0], modes))  # userhost-in-names: nick!user@host
+
+    def _split_prefixes(self, entry: str) -> tuple[str, set[str]]:
+        """'@+nick' -> ('nick', {'o', 'v'}) using the server's PREFIX mapping."""
+        prefix_to_mode = self.irc.prefix_to_mode or {"@": "o", "+": "v"}
+        prefix_chars = set(self.irc.nick_prefix_chars or "@+") | set(prefix_to_mode)
+        modes: set[str] = set()
+        while entry and entry[0] in prefix_chars:
+            if entry[0] in prefix_to_mode:
+                modes.add(prefix_to_mode[entry[0]])
+            entry = entry[1:]
+        return entry, modes
 
     async def _handle_end_of_names(self, msg: IRCMessage) -> None:
         """366 RPL_ENDOFNAMES — finalise nick list."""
@@ -681,9 +813,9 @@ class PyraBot:
         buf = self._names_buffer.pop(channel.lower(), [])
         ch = self.channels.get(channel.lower())
         if ch:
-            for nick in buf:
-                if nick.lower() not in ch.nicks:
-                    ch.add_nick(nick)
+            for nick, modes in buf:
+                ns = ch.get_nick(nick) or ch.add_nick(nick)
+                ns.modes = set(modes)
 
     async def _handle_topic(self, msg: IRCMessage) -> None:
         """332 RPL_TOPIC."""
@@ -799,6 +931,10 @@ class PyraBot:
             ns = ch.add_nick(nick)
         ns.user = user
         ns.host = host
+        # Status field, e.g. "H@+" or "G*@": here/gone, optional ircop '*', then prefixes
+        status = msg.params[6].lstrip("HG").lstrip("*")
+        _, modes = self._split_prefixes(status)
+        ns.modes = modes
 
     async def _handle_ban_list(self, msg: IRCMessage) -> None:
         """367 RPL_BANLIST — include listed ban mask in channel state."""
@@ -859,6 +995,7 @@ class PyraBot:
 
         await init_db(self.config.database.url)
         await self._bootstrap_owner_account()
+        await self.load_plugin_channel_states()
 
         # Start scheduler
         from pybot.core.scheduler import Scheduler

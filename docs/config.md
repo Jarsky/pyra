@@ -17,6 +17,8 @@ core:
   owner: YourNick          # Owner's web/partyline username
   owner_account: ""        # Owner's services account: how IRC recognises the owner
   owner_hostmask: ""       # ...or a nick!user@host mask (nick-only masks are refused)
+  command_rate_limit: 5    # commands per user per window (owners/admins exempt; 0 = off)
+  command_rate_window: 10  # seconds
 ```
 
 The owner is never recognised by nick alone. Set `owner_account` (recommended) or
@@ -80,7 +82,11 @@ channels:
     - "#general"
     - "#bots"
     - "#staff key123"      # Channel with key
+  rejoin_on_kick: true     # Rejoin 2s after being kicked
 ```
+
+Channels joined with `!join` (or `.join` on the partyline) are remembered and rejoined on
+every connect, in addition to `autojoin`; `!part` forgets them.
 
 ---
 

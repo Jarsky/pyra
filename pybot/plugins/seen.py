@@ -59,7 +59,7 @@ async def cmd_seen(bot: object, trigger: Trigger) -> None:
         return
 
     delta = datetime.now(tz=timezone.utc) - entry.seen_at.replace(tzinfo=timezone.utc)
-    age = _format_age(int(delta.total_seconds()))
+    age = plugin.format_age(int(delta.total_seconds()))
 
     if entry.action == "said":
         msg = f"{nick} was last seen in {entry.channel} {age} ago saying: {entry.message}"
@@ -128,17 +128,3 @@ async def _update_seen(nick: str, channel: str, action: str, message: str | None
                 seen_at=datetime.now(tz=timezone.utc),
             )
         )
-
-
-def _format_age(seconds: int) -> str:
-    if seconds < 60:
-        return f"{seconds}s"
-    if seconds < 3600:
-        return f"{seconds // 60}m"
-    if seconds < 86400:
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        return f"{h}h {m}m"
-    d = seconds // 86400
-    h = (seconds % 86400) // 3600
-    return f"{d}d {h}h"

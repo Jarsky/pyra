@@ -25,6 +25,10 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+__plugin_config__ = {
+    "units": {"type": "choice", "choices": ["metric", "imperial"], "default": "metric"},
+}
+
 import httpx
 
 from pybot import plugin

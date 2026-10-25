@@ -308,3 +308,30 @@ async def test_load_all_from_directory(mock_bot: MagicMock, plugin_dir: Path) ->
 
     for name in list(loader.get_loaded_plugins()):
         await loader.unload(name)
+
+
+async def test_importing_a_plugin_module_does_not_register_it_again(
+    mock_bot: MagicMock, plugin_dir: Path
+) -> None:
+    """A plugin importing helpers from another must not duplicate that plugin's commands."""
+    import importlib
+    import sys
+
+    sys.modules.pop("pybot.plugins.admin", None)
+    importlib.import_module("pybot.plugins.admin")  # an ordinary import, outside the loader
+    registry = get_registry()
+    assert all(h.plugin_name != "unknown" for hs in registry.commands.values() for h in hs)
+    assert all(h.plugin_name != "unknown" for h in registry.intervals)
+
+
+def test_shared_duration_helpers() -> None:
+    from datetime import timedelta
+
+    from pybot.plugin import format_age, parse_duration
+
+    assert parse_duration("10m") == timedelta(minutes=10)
+    assert parse_duration(" 2H ") == timedelta(hours=2)
+    for bad in ("", "m", "10", "-5m", "0s", "5x"):
+        with pytest.raises(ValueError):
+            parse_duration(bad)
+    assert [format_age(s) for s in (45, 720, 11100, 180000)] == ["45s", "12m", "3h 5m", "2d 2h"]

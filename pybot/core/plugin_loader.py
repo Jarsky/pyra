@@ -7,7 +7,10 @@ Hot-reload: file mtimes are polled every 5 seconds; SIGHUP triggers reload_all()
 
 Reloads are safe: the new version is executed before the old one is removed, so a
 broken edit leaves the working version running. Files that fail to load stay watched
-and are retried when they change.
+and are retried when they change. New files in the plugin directories are picked up.
+
+Which plugins load: plugins.enabled/plugins.disabled in config, overridden by choices made
+at runtime with enable()/disable() (!load/!unload, web UI), which are stored in the database.
 """
 
 from __future__ import annotations
@@ -29,6 +32,10 @@ class PluginLoadError(Exception):
     """Raised when a plugin cannot be loaded."""
 
 
+# Plugins that can't be unloaded or disabled (they provide the commands to undo it)
+PROTECTED_PLUGINS = frozenset({"admin"})
+
+
 def _module_name(name: str) -> str:
     return f"pybot.plugins._loaded.{name}"
 
@@ -42,6 +49,9 @@ class PluginLoader:
         self._failed: dict[str, Path] = {}  # plugins whose last load failed (still watched)
         self._errors: dict[str, str] = {}  # name -> last load error
         self._mtimes: dict[str, float] = {}  # name -> last mtime (loaded and failed)
+        self._replaced: dict[str, str] = {}  # name -> warning about a same-named plugin
+        self._states: dict[str, bool] = {}  # runtime load/unload choices (from the database)
+        self._directories: list[Path] = []
         self._watch_task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
@@ -90,6 +100,7 @@ class PluginLoader:
         self._failed.pop(name, None)
         self._errors.pop(name, None)
         logger.info(f"Plugin loaded: {name}")
+        self._warn_conflicts(name)
 
     async def unload(self, name: str) -> None:
         """Unload a plugin and remove all its registered handlers and jobs."""
@@ -109,6 +120,39 @@ class PluginLoader:
             raise KeyError(f"Plugin '{name}' is not known (never loaded)")
         await self.load(name, path)
 
+    async def enable(self, name: str) -> None:
+        """Load a plugin and remember the choice across restarts."""
+        path = self._available_paths.get(name)
+        if path is None:
+            raise KeyError(f"Plugin '{name}' not found")
+        await self._remember(name, True)
+        await self.load(name, path)
+
+    async def disable(self, name: str) -> None:
+        """Unload a plugin and remember the choice across restarts."""
+        if name in PROTECTED_PLUGINS:
+            raise PluginLoadError(f"The {name} plugin can't be unloaded")
+        await self._remember(name, False)
+        await self.unload(name)
+
+    async def _remember(self, name: str, loaded: bool) -> None:
+        from pybot.core.plugin_state import set_plugin_state
+
+        self._states[name] = loaded
+        try:
+            await set_plugin_state(name, loaded)
+        except Exception as exc:
+            logger.warning(f"Could not store plugin state for '{name}': {exc}")
+
+    def _wanted(self, name: str) -> bool:
+        """Should this plugin be loaded? Runtime choice first, then config."""
+        if name in self._states:
+            return self._states[name]
+        plugins_config = getattr(getattr(self._bot, "config", None), "plugins", None)
+        enabled = getattr(plugins_config, "enabled", "all") if plugins_config else "all"
+        disabled = getattr(plugins_config, "disabled", []) if plugins_config else []
+        return name not in disabled and (enabled == "all" or name in enabled)
+
     async def reload_all(self) -> None:
         """Reload all currently loaded plugins; a failure in one does not stop the rest."""
         for name in list(self._loaded.keys()):
@@ -119,28 +163,25 @@ class PluginLoader:
 
     async def load_all(self, directories: list[Path]) -> None:
         """Discover and load all .py plugins from a list of directories."""
-        plugins_config = getattr(getattr(self._bot, "config", None), "plugins", None)
-        enabled = getattr(plugins_config, "enabled", "all") if plugins_config else "all"
-        disabled = list(getattr(plugins_config, "disabled", []) if plugins_config else [])
+        from pybot.core.plugin_state import get_plugin_states
+
+        try:
+            self._states = await get_plugin_states()
+        except Exception as exc:
+            logger.debug(f"No stored plugin states: {exc}")
+        self._directories = list(directories)
 
         for directory in directories:
-            if not directory.is_dir():
-                continue
-            for path in sorted(directory.glob("*.py")):
-                name = path.stem
-                if name.startswith("_"):
-                    continue
+            for name, path in self._discover(directory):
                 previous = self._available_paths.get(name)
                 if previous is not None and previous != path:
-                    logger.warning(
-                        f"Plugin '{name}' in {path.parent} replaces the one in {previous.parent}"
+                    self._replaced[name] = (
+                        f"{path} replaces the plugin of the same name in {previous.parent}"
                     )
+                    logger.warning(f"Plugin '{name}': {self._replaced[name]}")
                 self._available_paths[name] = path
-                if name in disabled:
-                    logger.debug(f"Skipping disabled plugin: {name}")
-                    continue
-                if enabled != "all" and name not in enabled:
-                    logger.debug(f"Skipping non-enabled plugin: {name}")
+                if not self._wanted(name):
+                    logger.debug(f"Skipping plugin (not enabled): {name}")
                     continue
                 try:
                     await self.load(name, path)
@@ -160,6 +201,18 @@ class PluginLoader:
         """Last load error per plugin, for plugins whose most recent load failed."""
         return dict(self._errors)
 
+    def get_warnings(self) -> dict[str, list[str]]:
+        """Per plugin: commands it shares with other plugins, and same-name replacements."""
+        warnings: dict[str, list[str]] = {n: [w] for n, w in self._replaced.items()}
+        for command, handlers in get_registry().commands.items():
+            owners = sorted({h.plugin_name for h in handlers})
+            if len(owners) < 2:
+                continue
+            for owner in owners:
+                others = ", ".join(o for o in owners if o != owner)
+                warnings.setdefault(owner, []).append(f"!{command} is also provided by {others}")
+        return warnings
+
     def get_module(self, name: str) -> "ModuleType | None":
         return self._loaded.get(name)
 
@@ -169,6 +222,16 @@ class PluginLoader:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _discover(directory: Path) -> list[tuple[str, Path]]:
+        if not directory.is_dir():
+            return []
+        return [(p.stem, p) for p in sorted(directory.glob("*.py")) if not p.stem.startswith("_")]
+
+    def _warn_conflicts(self, name: str) -> None:
+        for message in self.get_warnings().get(name, []):
+            logger.warning(f"Plugin '{name}': {message}")
 
     def _exec_module(self, name: str, path: Path) -> ModuleType:
         module_name = _module_name(name)
@@ -250,9 +313,10 @@ class PluginLoader:
     # ------------------------------------------------------------------
 
     async def _watch_for_changes(self) -> None:
-        """Poll file mtimes every 5 seconds; reload changed plugins and retry failed ones."""
+        """Every 5 seconds: reload changed plugins, retry failed ones, load new files."""
         while True:
             await asyncio.sleep(5)
+            await self.rescan()
             watched = {**self._failed, **self._paths}
             for name, path in watched.items():
                 try:
@@ -269,3 +333,17 @@ class PluginLoader:
                     logger.error(str(exc))
                 except Exception as exc:
                     logger.error(f"Watcher error for plugin '{name}': {exc}")
+
+    async def rescan(self) -> None:
+        """Register plugin files added since startup, loading them if enabled."""
+        for directory in self._directories:
+            for name, path in self._discover(directory):
+                if name in self._available_paths:
+                    continue
+                self._available_paths[name] = path
+                logger.info(f"New plugin file found: {path}")
+                if self._wanted(name):
+                    try:
+                        await self.load(name, path)
+                    except PluginLoadError as exc:
+                        logger.error(str(exc))

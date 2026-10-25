@@ -37,6 +37,12 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+__plugin_config__ = {
+    "enabled": {"type": "bool", "default": True, "help": "Answer CTCP requests"},
+    "version_reply": {"type": "str", "default": "Pyra IRC Bot"},
+    "source_url": {"type": "str", "default": "https://github.com/Jarsky/pyra"},
+}
+
 
 def _cfg(bot: object) -> dict[str, Any]:
     cfg = bot.plugin_config("ctcp")  # type: ignore[attr-defined]

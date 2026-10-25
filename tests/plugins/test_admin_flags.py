@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -15,11 +16,22 @@ from pybot.plugins import admin
 
 
 class _DummyBot:
-    def __init__(self) -> None:
+    def __init__(self, whois: dict[str, str] | None = None) -> None:
         self.replies: list[str] = []
+        self.private: list[tuple[str, str]] = []
+        self._whois = whois or {}
+        self.config = SimpleNamespace(web=SimpleNamespace(host="0.0.0.0", port=8080))  # noqa: S104
 
     async def reply(self, _trigger: Any, message: str) -> None:
         self.replies.append(message)
+
+    async def whois(self, _nick: str) -> dict[str, str]:
+        return self._whois
+
+    async def say(self, target: str, message: str) -> None:
+        self.private.append((target, message))
+
+    notice = say
 
 
 @pytest.fixture(autouse=True)
@@ -111,3 +123,28 @@ async def test_bad_usage_and_unknown_or_ambiguous_users() -> None:
     assert bot.replies[0].startswith("No user named 'nobody'")
     assert bot.replies[1].startswith("Several users are named 'bob'")
     assert bot.replies[2].startswith("Usage:")
+
+
+async def test_adduser_needs_a_name_for_wildcard_nick_masks() -> None:
+    bot = _DummyBot()
+    await admin.cmd_adduser(bot, _trigger("*!bad@kick.host", "k", owner=True))
+    assert "give the user a name" in bot.replies[0]
+
+    await admin.cmd_adduser(bot, _trigger("*!bad@kick.host", "k", "kicky", owner=True))
+    assert bot.replies[-1] == "Added user kicky [*!bad@kick.host] with flags: k"
+    assert bot.private == []  # no login for users without a/n
+    async with get_session() as session:
+        from pybot.core.permissions import find_user_by_mask
+
+        user = await find_user_by_mask(session, "*!bad@kick.host")
+        assert user is not None and user.nick == "kicky" and not user.password_hash
+
+
+async def test_adduser_admin_login_goes_to_verified_user_only() -> None:
+    verified = _DummyBot(whois={"user": "d", "host": "dave.host"})
+    await admin.cmd_adduser(verified, _trigger("dave!d@dave.host", "a", owner=True))
+    assert {target for target, _ in verified.private} == {"dave"}
+
+    impostor = _DummyBot(whois={"user": "x", "host": "elsewhere"})
+    await admin.cmd_adduser(impostor, _trigger("erin!e@erin.host", "a", owner=True))
+    assert {target for target, _ in impostor.private} == {"caller"}  # sent to the admin
