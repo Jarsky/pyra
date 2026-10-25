@@ -13,19 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
-    
+    - uses: actions/checkout@v7
+
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
-        python-version: '3.12'
+        python-version: '3.14'
         cache: 'pip'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install build twine ruff black mypy types-PyYAML
-        pip install -r requirements.txt
+        pip install -e ".[dev]"
     
     - name: Run linting checks
       run: |
@@ -42,7 +41,7 @@ jobs:
       run: python -m build
     
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
         files: dist/*
         draft: false

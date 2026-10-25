@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, cast
 
 import bcrypt
+import jwt
 from fastapi import Cookie, Depends, HTTPException, Request, status
-from jose import JWTError, jwt
 
 if TYPE_CHECKING:
     from pybot.core.bot import PyraBot
@@ -47,7 +47,7 @@ def decode_token(token: str, secret_key: str) -> str | None:
     try:
         payload = jwt.decode(token, secret_key, algorithms=[ALGORITHM])
         return cast(str | None, payload.get("sub"))
-    except JWTError:
+    except jwt.PyJWTError:
         return None
 
 
