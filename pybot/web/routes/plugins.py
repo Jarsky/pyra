@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pybot.core.config import save_config_partial
 from pybot.web.app import templates
-from pybot.web.auth import get_current_user
+from pybot.web.auth import get_current_user, get_web_user_flags
 
 router = APIRouter()
 
@@ -50,15 +50,7 @@ def _resolve_config_path() -> Path:
 
 
 async def _is_owner(bot: Any, username: str) -> bool:
-    from sqlalchemy import select
-
-    from pybot.core.database import User, get_session
-    from pybot.core.permissions import has_flag
-
-    async with get_session() as session:
-        result = await session.execute(select(User).where(User.nick == username))
-        user = result.scalar_one_or_none()
-        return bool(user and await has_flag(session, user.hostmask, "n"))
+    return "n" in await get_web_user_flags(username)
 
 
 def _register_available(loader: Any, name: str, path: Path) -> None:
@@ -90,6 +82,7 @@ async def plugins_list(
         registry = get_registry()
         plugins = []
         loaded = loader.get_loaded_plugins()
+        errors = loader.get_errors()
         for name, path in sorted(loader.get_available_plugins().items()):
             cmds = []
             if name in loaded:
@@ -104,6 +97,7 @@ async def plugins_list(
                     "path": str(path),
                     "commands": cmds,
                     "loaded": name in loaded,
+                    "error": errors.get(name, ""),
                     "meta": _plugin_meta(loader, name),
                     "source": _plugin_source(str(path)),
                 }
@@ -488,6 +482,11 @@ async def reload_plugin(
     username: str = Depends(get_current_user),
 ) -> RedirectResponse:
     bot = request.app.state.bot
+    if not await _is_owner(bot, username):
+        return RedirectResponse(
+            url="/plugins?error=Owner+flag+required+to+reload+plugins.",
+            status_code=303,
+        )
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.reload(plugin_name)
@@ -510,6 +509,11 @@ async def load_plugin(
     username: str = Depends(get_current_user),
 ) -> RedirectResponse:
     bot = request.app.state.bot
+    if not await _is_owner(bot, username):
+        return RedirectResponse(
+            url="/plugins?error=Owner+flag+required+to+load+plugins.",
+            status_code=303,
+        )
     if bot.plugin_loader:
         try:
             available = bot.plugin_loader.get_available_plugins()
@@ -538,6 +542,11 @@ async def unload_plugin(
     username: str = Depends(get_current_user),
 ) -> RedirectResponse:
     bot = request.app.state.bot
+    if not await _is_owner(bot, username):
+        return RedirectResponse(
+            url="/plugins?error=Owner+flag+required+to+unload+plugins.",
+            status_code=303,
+        )
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.unload(plugin_name)

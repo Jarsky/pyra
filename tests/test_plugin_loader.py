@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pybot.core.plugin_loader import PluginLoader
+from pybot.core.plugin_loader import PluginLoader, PluginLoadError
 from pybot.plugin import get_registry
 
 
@@ -111,16 +111,89 @@ async def cmd(bot, trigger):
     await loader.unload("reloadtest")
 
 
-async def test_load_invalid_plugin_does_not_crash(mock_bot: MagicMock, plugin_dir: Path) -> None:
+async def test_load_invalid_plugin_raises(mock_bot: MagicMock, plugin_dir: Path) -> None:
     path = _write_plugin(
         plugin_dir,
         "badplugin",
         "raise RuntimeError('intentional load error')\n",
     )
     loader = PluginLoader(mock_bot)
-    # Should log an error but not raise
-    await loader.load("badplugin", path)
+    with pytest.raises(PluginLoadError, match="intentional load error"):
+        await loader.load("badplugin", path)
     assert not loader.is_loaded("badplugin")
+    assert "intentional load error" in loader.get_errors()["badplugin"]
+
+
+async def test_load_all_continues_past_broken_plugin(mock_bot: MagicMock, plugin_dir: Path) -> None:
+    _write_plugin(plugin_dir, "aa_broken", "raise RuntimeError('boom')\n")
+    _write_plugin(
+        plugin_dir,
+        "bb_good",
+        "from pybot import plugin\n@plugin.command('bbgood')\nasync def f(b,t): pass\n",
+    )
+    loader = PluginLoader(mock_bot)
+    await loader.load_all([plugin_dir])
+    assert loader.is_loaded("bb_good")
+    assert not loader.is_loaded("aa_broken")
+    for name in list(loader.get_loaded_plugins()):
+        await loader.unload(name)
+
+
+async def test_broken_reload_keeps_previous_version(mock_bot: MagicMock, plugin_dir: Path) -> None:
+    path = _write_plugin(
+        plugin_dir,
+        "keepold",
+        "from pybot import plugin\n@plugin.command('keepcmd')\nasync def f(b,t): pass\n",
+    )
+    loader = PluginLoader(mock_bot)
+    await loader.load("keepold", path)
+
+    path.write_text("this is ( not valid python\n")
+    with pytest.raises(PluginLoadError, match="previous version still running"):
+        await loader.reload("keepold")
+
+    assert loader.is_loaded("keepold")
+    assert any(h.plugin_name == "keepold" for h in get_registry().commands["keepcmd"])
+    await loader.unload("keepold")
+
+
+async def test_failed_plugin_can_load_after_fix(mock_bot: MagicMock, plugin_dir: Path) -> None:
+    path = _write_plugin(plugin_dir, "fixme", "this is ( not valid python\n")
+    loader = PluginLoader(mock_bot)
+    with pytest.raises(PluginLoadError):
+        await loader.load("fixme", path)
+    assert "fixme" in loader._failed  # still watched
+
+    path.write_text("from pybot import plugin\n@plugin.command('fixed')\nasync def f(b,t): pass\n")
+    await loader.reload("fixme")
+    assert loader.is_loaded("fixme")
+    assert "fixme" not in loader._failed
+    assert "fixme" not in loader.get_errors()
+    await loader.unload("fixme")
+
+
+async def test_interval_jobs_follow_plugin_lifecycle(mock_bot: MagicMock, plugin_dir: Path) -> None:
+    from pybot.core.scheduler import Scheduler
+
+    scheduler = Scheduler(mock_bot)
+    await scheduler.start()  # before plugins load, as in PyraBot.run()
+    mock_bot.scheduler = scheduler
+    path = _write_plugin(
+        plugin_dir,
+        "ticker",
+        "from pybot import plugin\n@plugin.interval(60)\nasync def tick(bot): pass\n",
+    )
+    loader = PluginLoader(mock_bot)
+
+    await loader.load("ticker", path)
+    assert [j["name"] for j in scheduler.list_jobs()] == ["ticker.tick"]
+
+    await loader.reload("ticker")
+    assert [j["name"] for j in scheduler.list_jobs()] == ["ticker.tick"]  # no duplicate
+
+    await loader.unload("ticker")
+    assert scheduler.list_jobs() == []
+    await scheduler.stop()
 
 
 async def test_plugin_setup_called(mock_bot: MagicMock, plugin_dir: Path) -> None:

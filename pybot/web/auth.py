@@ -51,32 +51,62 @@ def decode_token(token: str, secret_key: str) -> str | None:
         return None
 
 
+async def get_web_user_flags(username: str) -> set[str]:
+    """Flags of the web user, or an empty set if the user no longer exists."""
+    from sqlalchemy import select
+
+    from pybot.core.database import User, get_session
+    from pybot.core.permissions import get_user_flags
+
+    async with get_session() as session:
+        result = await session.execute(select(User).where(User.nick == username))
+        user = result.scalars().first()
+        if user is None or not user.password_hash:
+            return set()
+        return await get_user_flags(session, user)
+
+
+async def authenticate_token(bot: "PyraBot", token: str | None) -> tuple[str, set[str]] | None:
+    """Validate a session token: returns (username, flags) for a current admin, else None.
+
+    Flags are re-read on every request, so removing a user's a/n flag (or deleting the
+    user) ends their web session immediately rather than when the token expires.
+    """
+    if not token:
+        return None
+    username = decode_token(token, bot.config.web.secret_key.get_secret_value())
+    if not username:
+        return None
+    flags = await get_web_user_flags(username)
+    if "n" not in flags and "a" not in flags:
+        return None
+    return username, flags
+
+
 async def get_current_user(
     request: Request,
     access_token: str | None = Cookie(default=None),
 ) -> str:
     """FastAPI dependency — returns username or redirects to login."""
     bot: "PyraBot" = request.app.state.bot
-    secret = bot.config.web.secret_key.get_secret_value()
-
-    if not access_token:
+    session = await authenticate_token(bot, access_token)
+    if session is None:
         raise HTTPException(
             status_code=status.HTTP_303_SEE_OTHER,
             headers={"Location": "/auth/login"},
         )
+    request.state.user_flags = session[1]
+    return session[0]
 
-    username = decode_token(access_token, secret)
-    if not username:
-        raise HTTPException(
-            status_code=status.HTTP_303_SEE_OTHER,
-            headers={"Location": "/auth/login"},
-        )
-    return username
+
+def is_owner_request(request: Request) -> bool:
+    """True if the user authenticated by get_current_user holds the owner flag."""
+    return "n" in getattr(request.state, "user_flags", set())
 
 
 async def require_admin(
     username: str = Depends(get_current_user),
     request: Request | None = None,
 ) -> str:
-    """Alias for get_current_user — all web users must have a or n flag."""
+    """Alias for get_current_user, which already requires the a or n flag."""
     return username

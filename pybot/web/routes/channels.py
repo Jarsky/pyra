@@ -68,7 +68,7 @@ async def channels_list(
 ) -> HTMLResponse:
     bot = request.app.state.bot
     channels = list(bot.channels.values())
-    server_name = f"{bot.config.primary_server.host}:{bot.config.primary_server.port}"
+    server_name = f"{bot.irc.current_server.host}:{bot.irc.current_server.port}"
     grouped_channels = [{"server": server_name, "channels": channels}]
 
     channel_urls = {ch.name: quote(ch.name, safe="") for ch in channels}

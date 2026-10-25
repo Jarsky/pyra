@@ -16,6 +16,7 @@ from loguru import logger
 
 from pybot.core.config import BotConfig
 from pybot.core.irc import IRCConnection, IRCMessage
+from pybot.core.redact import redact_message
 from pybot.core.services import ServicesInterface
 
 if TYPE_CHECKING:
@@ -194,8 +195,7 @@ class PyraBot:
 
     async def shutdown_process(self, reason: str = "Shutdown requested") -> None:
         """Gracefully stop the bot process."""
-        await self.quit(reason)
-        await self._shutdown()
+        await self._shutdown(reason)
 
     async def restart_process(self) -> None:
         """Restart the current bot process in-place."""
@@ -345,98 +345,101 @@ class PyraBot:
             logger.debug(f"Could not persist IRC log entry: {exc}")
 
     def _sanitize_log_message(self, msg: IRCMessage) -> str | None:
-        """Redact sensitive authentication payloads before log persistence."""
+        """Redact passwords (services logins, !passwd/!setpass) before logs and partyline."""
         message = msg.text or None
         if not message or msg.command.upper() not in {"PRIVMSG", "NOTICE"}:
             return message
-
-        target = (msg.params[0] if msg.params else "").strip().lower()
-        service = target.split("@", 1)[0]
-        if service not in {"nickserv", "authserv", "q", "userserv"}:
-            return message
-
-        stripped = message.strip()
-        upper = stripped.upper()
-        if upper.startswith("IDENTIFY"):
-            return "IDENTIFY [REDACTED]"
-        if upper.startswith("AUTH"):
-            return "AUTH [REDACTED]"
-        if upper.startswith("LOGIN"):
-            return "LOGIN [REDACTED]"
-
-        return message
+        target = msg.params[0] if msg.params else ""
+        return redact_message(target, message, self.config.core.command_prefix)
 
     async def _dispatch_to_plugins(self, msg: IRCMessage) -> None:
         """Route message to plugin event handlers and command handlers."""
+        from dataclasses import replace
+
         from pybot.plugin import get_registry
 
         registry = get_registry()
-        core = self.config.core
+        event_handlers = registry.events.get(msg.command, [])
+        is_privmsg = msg.command == "PRIVMSG"
+        if not event_handlers and not is_privmsg:
+            return
+
+        # One trigger per message; handlers get copies with their own args/match
+        base = await self._build_trigger(msg, args=[], match=None)
+        if msg.command in ("PRIVMSG", "NOTICE") and await self._is_ignored(base):
+            return
 
         # Fire all @plugin.event(cmd) handlers
-        for event_handler in registry.events.get(msg.command, []):
+        for event_handler in event_handlers:
             asyncio.create_task(
-                self._run_plugin_handler(event_handler.func, msg),
+                self._run_plugin_handler(event_handler.func, msg, trigger=base),
                 name=f"event-{event_handler.plugin_name}-{msg.command}",
             )
 
-        # PRIVMSG routing — commands and rules
-        if msg.command == "PRIVMSG":
-            text = msg.text
+        # PRIVMSG routing — commands and rules, never for our own echoed messages
+        if not is_privmsg or msg.nick.lower() == self._current_nick.lower():
+            return
+        text = msg.text
+        prefix = self.config.core.command_prefix
 
-            # Ignore our own echoed messages (echo-message cap)
-            if msg.nick.lower() == self._current_nick.lower():
-                return
-
-            # Check for command prefix
-            if text.startswith(core.command_prefix):
-                parts = text[len(core.command_prefix) :].split()
-                if not parts:
-                    return
-                cmd_name = parts[0].lower()
-                args = parts[1:]
-
-                for command_handler in registry.commands.get(cmd_name, []):
-                    trigger = await self._build_trigger(msg, args=args, match=None)
-                    if trigger is None:
-                        continue
-                    # Check privilege
-                    if command_handler.privilege and not await self._check_privilege(
-                        trigger, command_handler.privilege
-                    ):
+        parts = text[len(prefix) :].split() if text.startswith(prefix) else []
+        if parts:
+            cmd_name = parts[0].lower()
+            args = parts[1:]
+            for command_handler in registry.commands.get(cmd_name, []):
+                if command_handler.channels and (
+                    base.channel is None
+                    or base.channel.lower() not in {c.lower() for c in command_handler.channels}
+                ):
+                    continue
+                trigger = replace(base, args=args)
+                if command_handler.privilege:
+                    if trigger.account is None:
+                        # No account from tags/state: ask the server before deciding
+                        trigger = await self._build_trigger(
+                            msg, args=args, match=None, resolve_account=True
+                        )
+                    if not await self._check_privilege(trigger, command_handler.privilege):
                         await self.notice(trigger.nick, "Permission denied.")
                         continue
-                    asyncio.create_task(
-                        self._run_plugin_handler(command_handler.func, msg, trigger=trigger),
-                        name=f"cmd-{command_handler.plugin_name}-{cmd_name}",
-                    )
+                asyncio.create_task(
+                    self._run_plugin_handler(command_handler.func, msg, trigger=trigger),
+                    name=f"cmd-{command_handler.plugin_name}-{cmd_name}",
+                )
 
-            # Rule matching
-            for rule_handler in registry.rules:
-                m = rule_handler.pattern.search(text)
-                if m:
-                    trigger = await self._build_trigger(msg, args=[], match=m)
-                    if trigger:
-                        asyncio.create_task(
-                            self._run_plugin_handler(rule_handler.func, msg, trigger=trigger),
-                            name=f"rule-{rule_handler.plugin_name}",
-                        )
+        # Rule matching
+        for rule_handler in registry.rules:
+            m = rule_handler.pattern.search(text)
+            if m:
+                asyncio.create_task(
+                    self._run_plugin_handler(
+                        rule_handler.func, msg, trigger=replace(base, match=m)
+                    ),
+                    name=f"rule-{rule_handler.plugin_name}",
+                )
+
+    async def _is_ignored(self, trigger: Any) -> bool:
+        if trigger.owner or not (trigger.user or trigger.host):
+            return False  # owners are never ignored; server messages have no user@host
+        from pybot.core.database import get_session
+        from pybot.core.permissions import is_ignored
+
+        try:
+            async with get_session() as session:
+                return await is_ignored(session, trigger.hostmask, trigger.account)
+        except Exception as exc:
+            logger.debug(f"Ignore check failed: {exc}")
+            return False
 
     async def _run_plugin_handler(
         self,
         func: Callable[..., Any],
         msg: IRCMessage,
-        trigger: Any | None = None,
+        trigger: Any,
     ) -> None:
         started = self._monotonic()
         try:
-            if trigger is not None:
-                await func(self, trigger)
-            else:
-                # Event handler — build trigger for it too
-                t = await self._build_trigger(msg, args=[], match=None)
-                if t:
-                    await func(self, t)
+            await func(self, trigger)
         except Exception as exc:
             logger.exception(f"Plugin handler error in {func.__module__}.{func.__name__}: {exc}")
         finally:
@@ -457,7 +460,13 @@ class PyraBot:
         msg: IRCMessage,
         args: list[str],
         match: Any | None,
-    ) -> Any | None:
+        resolve_account: bool = False,
+    ) -> Any:
+        """Build the Trigger for a message.
+
+        The services account comes from the account-tag or tracked channel state;
+        resolve_account=True also asks the server (WHOIS) when neither has it.
+        """
         from pybot.plugin import Trigger
 
         nick = msg.nick
@@ -489,28 +498,24 @@ class PyraBot:
                 if ns:
                     account = ns.account
 
-        # For commands, do a WHOIS account fallback when account-tag/state is missing.
-        if account is None and args:
+        if account is None and resolve_account and nick:
             whois_data = await self.whois(nick)
             whois_account = whois_data.get("account")
             if whois_account:
                 account = whois_account
 
-        # Determine admin/owner status
+        # Determine admin/owner status (one lookup; never from the nick alone)
         from pybot.core.database import get_session
-        from pybot.core.permissions import has_flag
+        from pybot.core.permissions import flags_allow, get_flags
 
-        admin = False
-        owner = False
+        flags: set[str] = set()
         try:
             async with get_session() as session:
-                owner = await has_flag(session, hostmask, "n", account=account)
-                admin = owner or await has_flag(session, hostmask, "a", account=account)
-        except Exception:
-            # DB may not be initialised yet
-            if nick == self.config.core.owner:
-                owner = True
-                admin = True
+                flags = await get_flags(session, hostmask, account=account)
+        except Exception as exc:
+            logger.debug(f"Flag lookup failed for {hostmask}: {exc}")
+        owner = "n" in flags
+        admin = owner or flags_allow(flags, "a")
 
         configured_owner_account = self.config.core.owner_account.strip()
         if (
@@ -644,9 +649,9 @@ class PyraBot:
                     await self.services.chanserv_invite(channel, self._current_nick)
                 if self.config.services.channel_guard_reop:
                     await self.services.chanserv_op(channel, self._current_nick)
-            # Auto-rejoin if configured
-            await asyncio.sleep(2)
-            await self.join(channel)
+            if self.config.channels.rejoin_on_kick:
+                await asyncio.sleep(2)
+                await self.join(channel)
         else:
             ch = self.channels.get(channel.lower())
             if ch:
@@ -885,68 +890,99 @@ class PyraBot:
         if self.config.web.enabled:
             asyncio.create_task(self._run_web(), name="web")
 
-        # Signal handlers
-        loop = asyncio.get_event_loop()
-        loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(self._shutdown()))
-        if hasattr(signal, "SIGHUP"):
-            loop.add_signal_handler(
-                signal.SIGHUP,
-                lambda: asyncio.create_task(self._reload_plugins()),
-            )
+        # Signal handlers (asyncio has none on Windows; Ctrl+C still stops the bot there)
+        loop = asyncio.get_running_loop()
+        try:
+            loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(self._shutdown()))
+            if hasattr(signal, "SIGHUP"):
+                loop.add_signal_handler(
+                    signal.SIGHUP,
+                    lambda: asyncio.create_task(self._reload_plugins()),
+                )
+        except NotImplementedError:
+            logger.debug("Signal handlers are not supported on this platform")
 
         # Connect to IRC
         await self.irc.run()
 
     async def _bootstrap_owner_account(self) -> None:
-        """Ensure an owner account exists for partyline/web auth in first-run setups."""
-        owner_nick = self.config.core.owner.strip()
+        """Ensure the owner record exists and matches config (core.owner*, partyline.password).
+
+        On IRC the owner is recognised by core.owner_account (services account) or
+        core.owner_hostmask, never by nick alone: "nick!*@*" lets anyone who takes the
+        nick act as owner, so such masks are refused and replaced on existing records.
+        """
+        core = self.config.core
+        owner_nick = core.owner.strip()
+        owner_account = core.owner_account.strip() or None
+        owner_hostmask = core.owner_hostmask.strip()
         partyline_password = self.config.partyline.password.get_secret_value().strip()
 
         if not owner_nick:
             logger.warning("core.owner is empty; cannot bootstrap owner login for web/partyline")
             return
-        if not partyline_password:
-            logger.warning(
-                "partyline.password is empty; set it in config "
-                "to enable initial web/partyline login"
-            )
-            return
 
         from sqlalchemy import select
 
         from pybot.core.database import User, get_session
-        from pybot.core.permissions import add_owner_bootstrap
+        from pybot.core.permissions import add_owner_bootstrap, is_nick_only_mask
         from pybot.web.auth import hash_password, verify_password
+
+        if owner_hostmask and is_nick_only_mask(owner_hostmask):
+            logger.error(
+                f"core.owner_hostmask '{owner_hostmask}' only pins the nick, so anyone could "
+                "use it; ignoring it. Use nick!user@host or set core.owner_account."
+            )
+            owner_hostmask = ""
 
         async with get_session() as session:
             result = await session.execute(select(User).where(User.nick == owner_nick))
             user = result.scalar_one_or_none()
 
             if user is None:
-                # Bootstrap a safe default owner hostmask for admin UI + partyline login.
                 await add_owner_bootstrap(
                     session,
                     owner_nick,
-                    f"{owner_nick}!*@*",
-                    hash_password(partyline_password),
+                    owner_hostmask,
+                    hash_password(partyline_password) if partyline_password else "",
+                    account=owner_account,
                 )
-                logger.info(f"Bootstrapped owner login for '{owner_nick}'")
-                return
+                logger.info(f"Bootstrapped owner record for '{owner_nick}'")
+                if not partyline_password:
+                    logger.warning(
+                        "partyline.password is empty; set it to enable the owner's "
+                        "web/partyline login"
+                    )
+            else:
+                if "n" not in (user.global_flags or ""):
+                    user.global_flags = "".join(sorted(set((user.global_flags or "") + "n")))
+                if owner_hostmask and user.hostmask != owner_hostmask:
+                    user.hostmask = owner_hostmask
+                elif is_nick_only_mask(user.hostmask or ""):
+                    if user.hostmask:
+                        logger.warning(
+                            f"Owner hostmask '{user.hostmask}' matched anyone using the nick "
+                            "and has been cleared. Set core.owner_account or "
+                            "core.owner_hostmask to use owner commands on IRC."
+                        )
+                    user.hostmask = ""
+                if owner_account and user.account != owner_account:
+                    user.account = owner_account
+                if partyline_password and not (
+                    user.password_hash and verify_password(partyline_password, user.password_hash)
+                ):
+                    # Config is the source of truth for the owner's bootstrap password
+                    user.password_hash = hash_password(partyline_password)
+                user_hostmask, user_account = user.hostmask, user.account
 
-            updated = False
-            if "n" not in (user.global_flags or ""):
-                user.global_flags = "".join(sorted(set((user.global_flags or "") + "n")))
-                updated = True
-            if not user.password_hash:
-                user.password_hash = hash_password(partyline_password)
-                updated = True
-            elif not verify_password(partyline_password, user.password_hash):
-                # Keep config as source-of-truth for first-run/admin bootstrap credentials.
-                user.password_hash = hash_password(partyline_password)
-                updated = True
-
-            if updated:
-                logger.info(f"Updated owner account bootstrap data for '{owner_nick}'")
+        if user is None:
+            user_hostmask, user_account = owner_hostmask, owner_account
+        if not user_hostmask and not user_account:
+            logger.warning(
+                f"Owner '{owner_nick}' has no IRC identity: set core.owner_account (recommended) "
+                "or core.owner_hostmask to use owner commands on IRC. Web and partyline "
+                "logins still work."
+            )
 
     async def _run_web(self) -> None:
         import uvicorn
@@ -967,14 +1003,13 @@ class PyraBot:
         except Exception as exc:
             logger.error(f"Web interface failed to start: {exc}")
 
-    async def _shutdown(self) -> None:
+    async def _shutdown(self, reason: str = "Shutting down") -> None:
         logger.info("Shutting down...")
-        await self.quit("Shutting down")
         if self.scheduler:
             await self.scheduler.stop()
         if self.partyline:
             await self.partyline.stop()
-        await self.irc.stop()
+        await self.irc.stop(reason)  # sends QUIT itself
 
     async def _reload_plugins(self) -> None:
         logger.info("Reloading plugins (SIGHUP)")

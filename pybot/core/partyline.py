@@ -82,7 +82,7 @@ class PartylineServer:
         if not self._sessions:
             return
 
-        line = _format_irc_event(msg)
+        line = _format_irc_event(msg, text=self._bot._sanitize_log_message(msg) or "")
         if line:
             for session in list(self._sessions):
                 if session.authenticated:
@@ -120,6 +120,7 @@ class PartylineSession:
         self._bot = bot
         self._server = server
         self.authenticated = False
+        self.owner = False  # set at login from the user's flags
         self.nick: str | None = None
         self._last_activity = asyncio.get_event_loop().time()
 
@@ -218,28 +219,44 @@ class PartylineSession:
         return False
 
     async def _verify_credentials(self, username: str, password: str) -> bool:
+        """Owner (config password) or a user with a password and the a/n flag."""
+        import secrets
+
         from sqlalchemy import select
 
         from pybot.core.database import User, get_session
+        from pybot.core.permissions import get_user_flags
         from pybot.web.auth import verify_password
 
         owner_nick = self._bot.config.core.owner.strip()
         owner_password = self._bot.config.partyline.password.get_secret_value().strip()
-        if username == owner_nick and owner_password and password == owner_password:
+        if (
+            owner_nick
+            and username == owner_nick
+            and owner_password
+            and secrets.compare_digest(password.encode(), owner_password.encode())
+        ):
+            self.owner = True
             return True
 
         try:
             async with get_session() as session:
                 result = await session.execute(select(User).where(User.nick == username))
-                user = result.scalar_one_or_none()
-
-            if not user or not user.password_hash:
-                return False
-
-            return verify_password(password, user.password_hash)
+                user = result.scalars().first()
+                if not user or not user.password_hash:
+                    return False
+                if not verify_password(password, user.password_hash):
+                    return False
+                flags = await get_user_flags(session, user)
         except Exception as exc:
             logger.error(f"Partyline auth error: {exc}")
             return False
+
+        if "n" not in flags and "a" not in flags:
+            logger.warning(f"Partyline: '{username}' has no admin flag; login refused")
+            return False
+        self.owner = "n" in flags
+        return True
 
     # ------------------------------------------------------------------
     # Command handling
@@ -265,7 +282,7 @@ class PartylineSession:
         )
 
     def _is_owner(self) -> bool:
-        return bool(self.nick and self.nick.lower() == self._bot.config.core.owner.lower())
+        return self.owner
 
     async def _cmd_who(self) -> None:
         sessions = [s for s in self._server._sessions if s.authenticated]
@@ -297,13 +314,15 @@ class PartylineSession:
 # ---------------------------------------------------------------------------
 
 
-def _format_irc_event(msg: "IRCMessage") -> str | None:
+def _format_irc_event(msg: "IRCMessage", text: str | None = None) -> str | None:
+    """Format an IRC event for the partyline; text overrides the (redacted) message text."""
     if msg.command == "PRIVMSG":
+        body = msg.text if text is None else text
         channel = msg.channel or msg.params[0] if msg.params else ""
-        if msg.text.startswith("\x01ACTION "):
-            action = msg.text[8:].rstrip("\x01")
+        if body.startswith("\x01ACTION "):
+            action = body[8:].rstrip("\x01")
             return f"[{channel}] * {msg.nick} {action}"
-        return f"[{channel}] <{msg.nick}> {msg.text}"
+        return f"[{channel}] <{msg.nick}> {body}"
     elif msg.command == "JOIN":
         channel = msg.params[0] if msg.params else msg.text
         return f"*** {msg.nick} ({msg.hostmask}) joined {channel}"

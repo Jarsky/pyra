@@ -10,17 +10,25 @@ Run `pybot-setup` to generate one interactively, or copy `config/config.example.
 ```yaml
 core:
   nick: Pyra               # Primary IRC nick
-  alt_nicks: [Pyra_, Pyra__]  # Fallbacks if nick is taken
+  altnicks: [Pyra_, Pyra__]  # Fallbacks if nick is taken
   ident: pyra              # IRC ident (username)
   realname: "Pyra IRC Bot" # IRC real name
   command_prefix: "!"      # Prefix for commands (e.g. !help)
+  owner: YourNick          # Owner's web/partyline username
+  owner_account: ""        # Owner's services account: how IRC recognises the owner
+  owner_hostmask: ""       # ...or a nick!user@host mask (nick-only masks are refused)
 ```
+
+The owner is never recognised by nick alone. Set `owner_account` (recommended) or
+`owner_hostmask` to use owner commands on IRC.
 
 ---
 
 ## `servers`
 
-List of servers in priority order. The bot uses the highest-priority reachable server.
+List of servers in priority order. The bot connects to the lowest `priority` value first; if
+it can't connect or register, it moves to the next server. After a drop from an established
+session it retries the same server first.
 
 ```yaml
 servers:

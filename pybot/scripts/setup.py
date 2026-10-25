@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import getpass
 import os
 import sys
@@ -11,13 +12,19 @@ from typing import Any
 
 import yaml
 
+# Keys must match pybot.core.config (unknown keys are silently ignored by the loader)
 CONFIG_TEMPLATE = {
     "core": {
         "nick": "",
-        "alt_nicks": [],
+        "altnicks": [],
         "ident": "pyra",
         "realname": "Pyra IRC Bot",
         "command_prefix": "!",
+        "owner": "",
+        "owner_account": "",
+        "owner_hostmask": "",
+        "log_level": "INFO",
+        "log_file": "data/pyra.log",
     },
     "servers": [
         {
@@ -28,7 +35,10 @@ CONFIG_TEMPLATE = {
         }
     ],
     "auth": {
-        "method": "none",
+        "auth_method": "none",
+        "sasl_mechanism": "none",
+        "sasl_username": "",
+        "sasl_password": "",
         "nickserv_password": "",
     },
     "channels": {
@@ -49,16 +59,44 @@ CONFIG_TEMPLATE = {
         "secret_key": "",
     },
     "plugins": {
-        "dirs": ["pybot/plugins", "plugins_extra"],
+        "extra_dir": "/plugins_extra" if Path("/.dockerenv").exists() else "plugins_extra",
         "disabled": [],
     },
-    "logging": {
-        "level": "INFO",
-        "file": "data/pyra.log",
-        "rotation": "10 MB",
-        "retention": "30 days",
-    },
 }
+
+# Wizard choice -> (auth_method, sasl_mechanism)
+AUTH_CHOICES = {
+    "none": ("none", "none"),
+    "nickserv": ("nickserv", "none"),
+    "sasl_plain": ("sasl", "PLAIN"),
+    "sasl_scram": ("sasl", "SCRAM-SHA-256"),
+    "sasl_external": ("sasl", "EXTERNAL"),
+}
+
+
+def apply_auth_choice(cfg: dict[str, Any], choice: str, nick: str, password: str = "") -> None:
+    """Fill cfg["auth"] for a wizard auth choice (raises KeyError for unknown choices)."""
+    auth_method, mechanism = AUTH_CHOICES[choice]
+    cfg["auth"]["auth_method"] = auth_method
+    cfg["auth"]["sasl_mechanism"] = mechanism
+    if choice == "nickserv":
+        cfg["auth"]["nickserv_password"] = password
+    elif mechanism in ("PLAIN", "SCRAM-SHA-256"):
+        cfg["auth"]["sasl_username"] = nick
+        cfg["auth"]["sasl_password"] = password
+
+
+def owner_mask_problem(mask: str) -> str | None:
+    """Why a hostmask is unsafe for the owner, or None if it is acceptable."""
+    from pybot.core.permissions import is_nick_only_mask
+
+    if mask and is_nick_only_mask(mask):
+        return (
+            f"'{mask}' would match anyone who uses that nick (or anyone at all). "
+            "Use nick!user@host, e.g. *!myident@my.host.example, or leave it blank "
+            "and rely on your services account."
+        )
+    return None
 
 
 def _prompt(msg: str, default: str = "", secret: bool = False) -> str:
@@ -94,7 +132,11 @@ def _generate_secret_key() -> str:
 
 
 async def _init_db_and_owner(
-    config_path: Path, owner_nick: str, owner_host: str, owner_password: str
+    config_path: Path,
+    owner_nick: str,
+    owner_host: str,
+    owner_password: str,
+    owner_account: str = "",
 ) -> None:
     from pybot.core.config import load_config
     from pybot.core.database import get_session, init_db
@@ -106,7 +148,9 @@ async def _init_db_and_owner(
 
     async with get_session() as session:
         hashed = hash_password(owner_password)
-        await add_owner_bootstrap(session, owner_nick, owner_host, hashed)
+        await add_owner_bootstrap(
+            session, owner_nick, owner_host, hashed, account=owner_account or None
+        )
         await session.commit()
 
 
@@ -166,9 +210,7 @@ def main() -> None:
             print("Aborted.")
             sys.exit(0)
 
-    cfg: dict[str, Any] = CONFIG_TEMPLATE.copy()
-    cfg["core"] = cfg["core"].copy()
-    cfg["servers"] = [cfg["servers"][0].copy()]
+    cfg: dict[str, Any] = copy.deepcopy(CONFIG_TEMPLATE)
 
     # Bot identity
     _section("Bot Identity")
@@ -186,11 +228,17 @@ def main() -> None:
 
     # Auth
     _section("Authentication")
-    print("  Methods: none, nickserv, sasl_plain, sasl_external, sasl_scram")
-    auth_method = _prompt("Auth method", "none")
-    cfg["auth"]["method"] = auth_method
-    if auth_method in ("nickserv", "sasl_plain", "sasl_scram"):
-        cfg["auth"]["nickserv_password"] = _prompt("NickServ/SASL password", secret=True)
+    print(f"  Methods: {', '.join(AUTH_CHOICES)}")
+    auth_choice = _prompt("Auth method", "none")
+    while auth_choice not in AUTH_CHOICES:
+        auth_choice = _prompt(f"Choose one of {', '.join(AUTH_CHOICES)}", "none")
+    auth_password = ""
+    if auth_choice in ("nickserv", "sasl_plain", "sasl_scram"):
+        auth_password = _prompt("NickServ/SASL password", secret=True)
+    apply_auth_choice(cfg, auth_choice, cfg["core"]["nick"], auth_password)
+    if auth_choice == "sasl_external":
+        cfg["auth"]["certfile"] = _prompt("Client certificate file (PEM)")
+        cfg["auth"]["keyfile"] = _prompt("Private key file (blank if in the certificate)", "")
 
     # Channels
     _section("Channels to Auto-Join")
@@ -229,8 +277,21 @@ def main() -> None:
     # Owner account
     _section("Owner Account")
     print("  This account will have full bot control (flag 'n').")
-    owner_nick = _prompt("Your IRC nick")
-    owner_host = _prompt("Your hostmask pattern (e.g. *!user@host.example.com)", "*!*@*")
+    print("  On IRC you are recognised by your services account and/or a hostmask,")
+    print("  never by nick alone (anyone can take a nick).")
+    owner_nick = _prompt("Your IRC nick (also your web/partyline username)")
+    owner_account = _prompt("Your NickServ/services account (recommended)", "")
+    while True:
+        owner_host = _prompt("Your hostmask, e.g. *!ident@your.host (blank = account only)", "")
+        problem = owner_mask_problem(owner_host)
+        if problem is None:
+            break
+        _warn(problem)
+    if not owner_account and not owner_host:
+        _warn("No account or hostmask: owner commands on IRC won't work until you set one.")
+    cfg["core"]["owner"] = owner_nick
+    cfg["core"]["owner_account"] = owner_account
+    cfg["core"]["owner_hostmask"] = owner_host
     owner_password = _prompt("Partyline/web password", secret=True)
     owner_confirm = _prompt("Confirm password", secret=True)
     if owner_password != owner_confirm:
@@ -246,9 +307,13 @@ def main() -> None:
     # Init DB + owner
     print("\n  Initialising database and owner account...")
     try:
-        asyncio.run(_init_db_and_owner(config_path, owner_nick, owner_host, owner_password))
+        asyncio.run(
+            _init_db_and_owner(config_path, owner_nick, owner_host, owner_password, owner_account)
+        )
         _success("Database initialised")
-        _success(f"Owner account created for {owner_nick} ({owner_host})")
+        parts = [f"account {owner_account}" if owner_account else "", owner_host]
+        identity = ", ".join(p for p in parts if p)
+        _success(f"Owner account created for {owner_nick} ({identity or 'web/partyline only'})")
     except Exception as e:
         _warn(f"DB init failed: {e}")
         _warn("You can run 'alembic upgrade head' manually after fixing the issue.")

@@ -512,10 +512,27 @@ async def test_build_trigger_uses_whois_account_fallback_for_commands(
     bot.whois = fake_whois  # type: ignore[method-assign]
 
     msg = parse(":alice!u@h PRIVMSG #test :!ping")
-    trigger = await bot._build_trigger(msg, args=["dummy"], match=None)
+    trigger = await bot._build_trigger(msg, args=["dummy"], match=None, resolve_account=True)
 
     assert trigger is not None
     assert trigger.account == "alice_account"
+
+
+@pytest.mark.asyncio
+async def test_build_trigger_skips_whois_unless_asked(minimal_config_dict: dict) -> None:
+    cfg = BotConfig.model_validate(minimal_config_dict)
+    bot = PyraBot(cfg)
+    calls: list[str] = []
+
+    async def fake_whois(nick: str) -> dict[str, str]:
+        calls.append(nick)
+        return {"account": "alice_account"}
+
+    bot.whois = fake_whois  # type: ignore[method-assign]
+    trigger = await bot._build_trigger(parse(":alice!u@h PRIVMSG #test :!ping x"), ["x"], None)
+
+    assert trigger.account is None
+    assert calls == []
 
 
 def test_runtime_session_reset_clears_protocol_state(minimal_config_dict: dict) -> None:

@@ -101,7 +101,7 @@ class Trigger:
         from pybot.core.permissions import has_flag as _has_flag
 
         async with get_session() as session:
-            return await _has_flag(session, self.hostmask, flag, channel)
+            return await _has_flag(session, self.hostmask, flag, channel, account=self.account)
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +130,47 @@ class PluginRegistry:
             if not self.events[evt]:
                 del self.events[evt]
         self.intervals = [h for h in self.intervals if h.plugin_name != plugin_name]
+
+    def take_plugin(self, plugin_name: str) -> "PluginHandlers":
+        """Remove and return all handlers of a plugin (see restore_plugin)."""
+        taken = PluginHandlers(
+            commands=[
+                (name, h)
+                for name, handlers in self.commands.items()
+                for h in handlers
+                if h.plugin_name == plugin_name
+            ],
+            rules=[h for h in self.rules if h.plugin_name == plugin_name],
+            events=[
+                h
+                for handlers in self.events.values()
+                for h in handlers
+                if h.plugin_name == plugin_name
+            ],
+            intervals=[h for h in self.intervals if h.plugin_name == plugin_name],
+        )
+        self.clear_plugin(plugin_name)
+        return taken
+
+    def restore_plugin(self, handlers: "PluginHandlers") -> None:
+        """Put back handlers previously removed with take_plugin."""
+        for name, command_handler in handlers.commands:
+            self.commands.setdefault(name, []).append(command_handler)
+        self.rules.extend(handlers.rules)
+        self.rules.sort(key=lambda h: h.priority, reverse=True)
+        for event_handler in handlers.events:
+            self.events.setdefault(event_handler.event, []).append(event_handler)
+        self.intervals.extend(handlers.intervals)
+
+
+@dataclass
+class PluginHandlers:
+    """Handlers belonging to one plugin, detached from the registry."""
+
+    commands: list[tuple[str, CommandHandler]] = field(default_factory=list)
+    rules: list[RuleHandler] = field(default_factory=list)
+    events: list[EventHandler] = field(default_factory=list)
+    intervals: list[IntervalHandler] = field(default_factory=list)
 
 
 _registry = PluginRegistry()

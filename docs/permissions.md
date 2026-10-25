@@ -26,50 +26,56 @@ Applied per-channel (e.g. `#general+o`):
 |------|---------|
 | `o` | Channel op — moderation in this channel |
 | `v` | Voice — trusted in this channel |
-| `k` | Autokick on join |
-| `b` | Banned from channel |
+| `k` | Autokick on join (stored; not enforced yet) |
+| `b` | Banned from channel (stored; not enforced yet) |
 
 ---
 
 ## Flag Resolution Order
 
-1. Owner `n` → implies all flags everywhere
-2. Global `I` (Ignore) → blocks all commands regardless of other flags
-3. Global flags (apply everywhere)
-4. Channel-specific flags (override globals for that channel)
-5. NickServ account match (if services integration enabled)
+A user's flags are collected from **every** record that matches them, by hostmask pattern or
+by services account. Global flags apply everywhere; channel flags add to them in that channel.
+
+1. Owner `n` → implies all flags everywhere, and owners are never ignored
+2. `I` (Ignore), or a matching `!ignore` entry → the bot ignores all their messages
+3. Otherwise a check passes if the flag is among the collected flags
 
 ---
 
 ## Hostmask Matching
 
-Patterns use `fnmatch` wildcards:
+Patterns use IRC wildcards: `*` (any run of characters) and `?` (one character), compared
+case-insensitively. Everything else is literal, including `[ ]` in nicks.
 
 ```
 *!*@*                   matches anyone
-nick!*@*                matches by nick only (not recommended)
+nick!*@*                matches by nick only: anyone can take a nick (refused for n/a)
 *!user@*.example.com    matches by ident + domain
 *!*@192.168.1.*         matches IP subnet
 nick!user@host          exact match
 ```
 
-The most specific matching pattern wins.
+Flags from all matching patterns are combined, so a broad pattern (`*!*@*.example.com`)
+grants its flags to everyone it matches.
 
 ---
 
 ## Managing Flags
 
-### Via IRC commands (requires admin flag)
+### Via IRC commands
 
 ```
-!adduser <nick> <hostmask>        Create a user record
-!deluser <nick>                   Remove a user record
-!flags <nick> +<flags>            Add global flags
-!flags <nick> -<flags>            Remove global flags
-!flags <nick> #channel +<flags>   Add channel flags
-!flags <nick> #channel -<flags>   Remove channel flags
-!whois <nick>                     Show user flags and info
+!adduser <nick!user@host> <flags>   Create a user with global flags (owner)
+!deluser <nick>                     Remove a user record (owner)
+!flags <nick|mask>                  Show global flags (admin)
+!flags <nick|mask> +ov-k            Add/remove global flags (admin)
+!flags <nick|mask> #channel +o      Add/remove channel flags (admin)
+!whois <nick>                       Show a user's record and flags (admin)
+!ignore <mask> [duration]           Ignore a hostmask, e.g. 2h or 1d (admin)
 ```
+
+Use the mask instead of the nick when several users share a nick. Admins can't grant or
+remove `n` or change an owner's flags, and a change with a refused flag is not applied at all.
 
 ### Via web UI
 
@@ -77,17 +83,31 @@ Navigate to **Users** → find the user → click **Edit Flags**.
 
 ### Via partyline
 
-Same commands as IRC, no prefix needed.
+Not yet: the partyline has bot controls (`.say`, `.join`, `.reload`, ...) but no user commands.
 
 ---
 
 ## Initial Owner Setup
 
-The first owner is created by `pybot-setup`. To add another owner:
+The first owner is created by `pybot-setup`, or at startup from `core.owner`,
+`core.owner_account`, `core.owner_hostmask` and `partyline.password`.
+
+### Identity rules
+
+- A hostmask that only pins the nick (`nick!*@*`, `*!*@*`) identifies nobody: anyone can take
+  that nick. Owner (`n`) and admin (`a`) flags are refused for such masks unless the user has
+  a services account bound, and an existing owner record with one is cleared at startup.
+- Prefer services accounts (`core.owner_account`, or `!useserviceauth` once you are
+  recognised), or a mask that pins user and host, e.g. `*!jarsky@trusted.host.com`.
+- Only owners can grant or remove the `n` flag or change an owner's flags, and only owners
+  can delete users. Owners are never ignored.
+- The web UI and partyline accept only users with the `a` or `n` flag. Losing the flag ends an
+  existing web session on the next request.
+
+To add another owner:
 
 ```
-!adduser jarsky *!jarsky@trusted.host.com
-!flags jarsky +n
+!adduser *!jarsky@trusted.host.com n
 ```
 
 Or directly in the database:
@@ -122,7 +142,7 @@ asyncio.run(main())
 # Exempt trusted bot from antispam
 !flags goodbot +X
 
-# Ban nick from #general via channel flag
+# Mark a user as banned in #general (stored; enforcement is not implemented yet)
 !flags badnick #general +b
 ```
 

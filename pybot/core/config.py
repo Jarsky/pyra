@@ -28,8 +28,9 @@ class CoreConfig(BaseModel):
     realname: str = "Pyra IRC Bot"
     ident: str = "pyra"
     command_prefix: str = "!"
-    owner: str = ""
-    owner_account: str = ""
+    owner: str = ""  # owner's nick: web/partyline username
+    owner_account: str = ""  # services account that identifies the owner on IRC
+    owner_hostmask: str = ""  # or a nick!user@host mask (not nick!*@*)
     admins: list[str] = Field(default_factory=list)
     log_level: str = "INFO"
     log_file: str = "data/logs/pyra.log"
@@ -98,6 +99,7 @@ class AuthConfig(BaseModel):
 
 class ChannelsConfig(BaseModel):
     autojoin: list[str] = Field(default_factory=list)
+    rejoin_on_kick: bool = True
     channel_config: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 

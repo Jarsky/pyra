@@ -13,8 +13,11 @@ core:
   realname: "Pyra IRC Bot"        # IRC realname / GECOS
   ident: "pyra"                   # IRC ident/username
   command_prefix: "!"             # Command prefix character
-  owner: "YourNick"               # Owner's IRC nick
-  owner_account: ""               # Owner's NickServ account (optional)
+  owner: "YourNick"               # Owner's nick (web/partyline username)
+  # How the bot recognises the owner on IRC: set at least one. Never by nick
+  # alone, since anyone can take a nick ("YourNick!*@*" is refused).
+  owner_account: ""               # Owner's NickServ/services account (recommended)
+  owner_hostmask: ""              # Or a hostmask, e.g. "*!ident@your.host.example"
   admins: []                      # Additional admin nicks/accounts
   log_level: "INFO"               # DEBUG | INFO | WARNING | ERROR
   log_file: "data/logs/pyra.log"  # Log file path (rotated automatically)
@@ -59,6 +62,7 @@ channels:
   autojoin:
     - "#bots"
     # - "#another"
+  rejoin_on_kick: true            # Rejoin a channel 2s after being kicked
 
   # Per-channel overrides (all optional, inherit global defaults):
   # channel_config:

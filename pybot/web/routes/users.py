@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pybot.web.app import templates
-from pybot.web.auth import get_current_user
+from pybot.web.auth import get_current_user, is_owner_request
 
 router = APIRouter()
 
@@ -56,35 +56,37 @@ async def update_flags(
     flag: str = Form(...),
     channel: str = Form(""),
 ) -> RedirectResponse:
+    from urllib.parse import quote_plus
+
     from sqlalchemy import select
 
     from pybot.core.database import User, get_session
-    from pybot.core.permissions import add_flag, remove_flag
+    from pybot.core.permissions import grant_flag, revoke_flag
 
+    flag = flag.strip()
+    if len(flag) != 1 or not flag.isalpha():
+        return RedirectResponse(url="/users?error=A+flag+is+a+single+letter.", status_code=303)
+
+    actor_flags = request.state.user_flags
     async with get_session() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         target_user = result.scalar_one_or_none()
-        admin_result = await session.execute(select(User).where(User.nick == username))
-        admin_user = admin_result.scalar_one_or_none()
-
-        if not target_user or not admin_user:
+        if not target_user:
             return RedirectResponse(url="/users", status_code=303)
 
         ch = channel.strip() or None
         try:
             if action == "add":
-                await add_flag(session, admin_user.hostmask, target_user.hostmask, flag, channel=ch)
+                await grant_flag(session, actor_flags, target_user, flag, ch, granted_by=username)
             elif action == "remove":
-                await remove_flag(
-                    session, admin_user.hostmask, target_user.hostmask, flag, channel=ch
-                )
+                await revoke_flag(session, actor_flags, target_user, flag, ch)
             else:
                 return RedirectResponse(
-                    url=f"/users?error=Unknown+action:+{action}", status_code=303
+                    url=f"/users?error=Unknown+action:+{quote_plus(action)}", status_code=303
                 )
-        except PermissionError:
+        except PermissionError as exc:
             return RedirectResponse(
-                url="/users?error=Permission+denied:+insufficient+flags+to+perform+this+action.",
+                url=f"/users?error=Permission+denied:+{quote_plus(str(exc))}",
                 status_code=303,
             )
 
@@ -105,11 +107,21 @@ async def delete_user(
 
     from pybot.core.database import User, get_session
 
+    # Same rule as !deluser on IRC: owners only
+    if not is_owner_request(request):
+        return RedirectResponse(
+            url="/users?error=Owner+flag+required+to+delete+users.", status_code=303
+        )
+
     async with get_session() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
             return RedirectResponse(url="/users?error=User+not+found.", status_code=303)
+        if user.nick == username:
+            return RedirectResponse(
+                url="/users?error=You+cannot+delete+your+own+account.", status_code=303
+            )
         nick = user.nick
         await session.delete(user)
 
