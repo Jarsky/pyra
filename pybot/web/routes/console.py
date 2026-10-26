@@ -123,4 +123,5 @@ async def _handle_ws_command(
         channel_names=lambda: sorted(ch.name for ch in bot.channels.values()),
         close=websocket.close,
         line_ending="",
+        source="web",
     )

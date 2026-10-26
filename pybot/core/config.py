@@ -25,6 +25,7 @@ class ConfigError(Exception):
 class CoreConfig(BaseModel):
     nick: str = "Pyra"
     altnicks: list[str] = Field(default_factory=lambda: ["Pyra_", "Pyra__"])
+    keepnick: bool = True  # take `nick` back when it frees up while on an altnick
     realname: str = "Pyra IRC Bot"
     ident: str = "pyra"
     command_prefix: str = "!"
@@ -109,6 +110,7 @@ class ChannelsConfig(BaseModel):
 class DatabaseConfig(BaseModel):
     url: str = "sqlite+aiosqlite:///data/pyra.db"
     echo: bool = False
+    log_retention_days: int = Field(default=30, ge=0)  # message log kept this long; 0 = forever
 
 
 class FloodConfig(BaseModel):

@@ -358,6 +358,7 @@ async def execute_partyline_command(
     channel_names: Callable[[], list[str]],
     close: Callable[[], None | Awaitable[None]] | None = None,
     line_ending: str = "\n",
+    source: str = "partyline",
 ) -> None:
     lower = line.lower().strip()
     if not lower.startswith("."):
@@ -366,6 +367,23 @@ async def execute_partyline_command(
 
     cmd, _, _ = lower[1:].partition(" ")
     raw_args = line[1 + len(cmd) :].strip()
+
+    if cmd in ("say", "join", "part", "reload", "raw", "shutdown", "restart"):
+        from pybot.core.audit import audit
+
+        # .raw may carry secrets (e.g. IDENTIFY); record only that it was used
+        details = "" if cmd == "raw" else raw_args
+        await audit(actor or "?", f"partyline.{cmd}", details=details, source=source)
+
+    from pybot.core import partyline_admin
+
+    if cmd in partyline_admin.COMMANDS:
+
+        async def say(text: str) -> None:
+            await send(f"{text}{line_ending}")
+
+        await partyline_admin.run(bot, cmd, raw_args.split(), actor, is_owner, say, source)
+        return
 
     if cmd == "quit":
         await send(f"Goodbye!{line_ending}")
@@ -400,6 +418,10 @@ async def execute_partyline_command(
             + "  .raw <line>           (owner only)"
             + line_ending
             + "  .quit"
+            + line_ending
+            + "Users and channels:"
+            + line_ending
+            + line_ending.join(partyline_admin.HELP)
             + line_ending
         )
         return

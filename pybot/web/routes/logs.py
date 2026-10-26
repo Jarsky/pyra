@@ -54,8 +54,9 @@ async def logs_view(
         logs = result.scalars().all()
 
     file_logs: list[str] = []
-    if not logs:
-        log_path = Path(request.app.state.bot.config.core.log_file)
+    log_file = request.app.state.bot.config.core.log_file
+    if not logs and log_file:
+        log_path = Path(log_file)
         if not log_path.is_absolute():
             data_dir = Path(os.environ.get("DATA_DIR", "data"))
             if log_path.parts and log_path.parts[0] == "data":
@@ -64,7 +65,7 @@ async def logs_view(
             else:
                 log_path = data_dir / log_path
 
-        if log_path.exists():
+        if log_path.is_file():
             file_logs = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]
 
     return templates.TemplateResponse(
@@ -79,6 +80,32 @@ async def logs_view(
             "filter_event": event_type,
             "file_logs": file_logs,
             "page": page,
+            "retention_days": request.app.state.bot.config.database.log_retention_days,
+        },
+    )
+
+
+@router.get("/audit", response_class=HTMLResponse)
+async def audit_view(
+    request: Request,
+    username: str = Depends(get_current_user),
+    actor: str = "",
+    action: str = "",
+    limit: int = 200,
+) -> HTMLResponse:
+    """Recent admin actions, newest first."""
+    from pybot.core.audit import recent
+
+    entries = await recent(max(1, min(limit, 1000)), actor=actor, action=action)
+    return templates.TemplateResponse(
+        request,
+        "audit.html",
+        {
+            "request": request,
+            "username": username,
+            "entries": entries,
+            "filter_actor": actor,
+            "filter_action": action,
         },
     )
 
@@ -109,8 +136,9 @@ async def logs_stream(
 
     lines = [_serialize_log_row(log) for log in logs]
 
-    if not lines:
-        log_path = Path(request.app.state.bot.config.core.log_file)
+    log_file = request.app.state.bot.config.core.log_file
+    if not lines and log_file:
+        log_path = Path(log_file)
         if not log_path.is_absolute():
             data_dir = Path(os.environ.get("DATA_DIR", "data"))
             if log_path.parts and log_path.parts[0] == "data":
@@ -118,7 +146,7 @@ async def logs_stream(
                 log_path = data_dir / remainder
             else:
                 log_path = data_dir / log_path
-        if log_path.exists():
+        if log_path.is_file():
             lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]
 
     return {"lines": lines}

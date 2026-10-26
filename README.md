@@ -26,10 +26,11 @@
 
 ## What You Get Out Of The Box
 
-- **17 built-in plugins** for moderation, channel protection, chat history, utility, notes, search, seen/tell, uptime, and more.
+- **18 built-in plugins** for moderation, channel protection, flood protection, chat history, utility, notes, search, seen/tell, uptime, and more.
 - **Optional extra plugins** in `plugins_extra/` including headlines, weather, URL tools, and media helpers.
 - **Strong IRC support** including IRCv3, TLS, SASL auth, and connection flood protection.
-- **Live admin workflows** with both a web UI and partyline console.
+- **Live admin workflows** with both a web UI and partyline console, plus an audit log of
+  who changed what.
 - **Hot-reload support** so plugin updates do not require full bot restarts.
 
 ---

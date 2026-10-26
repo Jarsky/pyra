@@ -11,24 +11,53 @@
   </div>
 </form>
 
+<style>
+  .inline-form { display:inline-flex; gap:0.3rem; align-items:center; margin:0.15rem 0; }
+  .inline-form input, .inline-form select { margin:0; padding:0.15rem 0.4rem; height:auto; width:auto; font-size:0.85rem; }
+  .inline-form button { margin:0; padding:0.15rem 0.5rem; font-size:0.8rem; }
+  .host-row { display:flex; gap:0.3rem; align-items:center; }
+</style>
+
 {% if users %}
 <table>
   <thead>
     <tr>
-      <th>Nick</th><th>Hostmask</th><th>Account</th><th>Flags</th><th>Last seen</th><th>Actions</th>
+      <th>Nick</th><th>Hostmasks</th><th>Account</th><th>Flags</th><th>Last seen</th><th>Actions</th>
     </tr>
   </thead>
   <tbody>
   {% for user in users %}
   <tr>
     <td><strong>{{ user.nick }}</strong></td>
-    <td class="mono"><small>{{ user.hostmask }}</small></td>
+    <td class="mono">
+      {% for mask in user.all_masks %}
+      <div class="host-row">
+        <small>{{ mask }}</small>
+        <form class="inline-form" action="/users/{{ user.id }}/hosts" method="post">
+          <input type="hidden" name="action" value="remove">
+          <input type="hidden" name="mask" value="{{ mask }}">
+          <button type="submit" class="secondary outline" title="Remove this hostmask">×</button>
+        </form>
+      </div>
+      {% else %}<small>account only</small>{% endfor %}
+      <form class="inline-form" action="/users/{{ user.id }}/hosts" method="post">
+        <input type="hidden" name="action" value="add">
+        <input type="text" name="mask" placeholder="*!ident@host" size="16" required>
+        <button type="submit" class="outline">Add host</button>
+      </form>
+    </td>
     <td>{{ user.account or '—' }}</td>
     <td>
       <code>{{ user.global_flags }}</code>
       {% for f in user.flags %}
         <small title="{{ f.channel or 'global' }}">{{ f.channel or '*' }}+{{ f.flag }}</small>
       {% endfor %}
+      <form class="inline-form" action="/users/{{ user.id }}/flags" method="post">
+        <select name="action"><option value="add">+</option><option value="remove">−</option></select>
+        <input type="text" name="flag" maxlength="1" size="2" placeholder="o" required>
+        <input type="text" name="channel" size="9" placeholder="#chan (opt.)">
+        <button type="submit" class="outline">Apply</button>
+      </form>
     </td>
     <td>
       {% if user.last_seen %}

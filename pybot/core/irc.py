@@ -269,6 +269,7 @@ DESIRED_CAPS = {
     "invite-notify",
     "cap-notify",
 }
+# MONITOR is an ISUPPORT token, not a capability; it is used for keepnick when offered
 
 
 class IRCConnection:
@@ -814,7 +815,11 @@ class IRCConnection:
         return False
 
     async def _on_433(self, msg: IRCMessage) -> None:
-        """Nick already in use — try next altnick."""
+        """Nick already in use — during registration, try the next altnick."""
+        if self._registered:
+            # A later NICK attempt (e.g. keepnick) failed; keep the nick we have
+            logger.debug(f"Nick change refused: {msg.text}")
+            return
         core = self._config.core
         current = msg.params[1] if len(msg.params) > 1 else core.nick
 

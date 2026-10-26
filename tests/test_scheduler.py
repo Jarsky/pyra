@@ -119,7 +119,7 @@ async def test_scheduler_list_pause_resume_for_interval_job() -> None:
         assert len(jobs) == 1
         assert jobs[0]["name"] == "demo._job"
         assert jobs[0]["paused"] is False
-        assert jobs[0]["schedule"] == "every 60s"
+        assert jobs[0]["schedule"] == "every 1m"
 
         assert scheduler.pause_job("demo._job") is True
         jobs = scheduler.list_jobs()

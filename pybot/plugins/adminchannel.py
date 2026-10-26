@@ -144,6 +144,7 @@ async def cmd_unban(bot: object, trigger: Trigger) -> None:
         )
         for ban in result.scalars().all():
             ban.active = False
+        await _audit(trigger, "ban.remove", mask, channel, session)
 
     await bot.reply(trigger, f"Unbanned {mask}.")  # type: ignore[attr-defined]
 
@@ -167,7 +168,7 @@ async def cmd_kickban(bot: object, trigger: Trigger) -> None:
     mask = await _resolve_ban_mask(bot, channel, nick)
     await bot.ban(channel, mask)  # type: ignore[attr-defined]
     await bot.kick(channel, nick, reason)  # type: ignore[attr-defined]
-    await _store_ban(bot, trigger, channel, mask, reason)
+    await _store_ban(bot, trigger, channel, mask, reason, action="ban.kickban")
 
 
 @plugin.command(
@@ -198,7 +199,7 @@ async def cmd_tempban(bot: object, trigger: Trigger) -> None:
     await bot.ban(channel, mask)  # type: ignore[attr-defined]
     await bot.kick(channel, nick, f"{reason} (temp ban)")  # type: ignore[attr-defined]
     # Lifted by the changuard plugin when it expires (survives restarts)
-    await _store_ban(bot, trigger, channel, mask, reason, expires_at=expires)
+    await _store_ban(bot, trigger, channel, mask, reason, expires_at=expires, action="ban.temp")
     await bot.reply(trigger, f"Temp-banned {mask} until {expires.strftime('%H:%M UTC')}.")  # type: ignore[attr-defined]
 
 
@@ -291,14 +292,18 @@ async def cmd_bans(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, "No active bans in this channel.")  # type: ignore[attr-defined]
         return
 
-    await bot.notice(trigger.nick, f"Active bans in {trigger.channel}:")  # type: ignore[attr-defined]
+    items = []
     for ban in bans:
-        line = f"  {ban.hostmask} — by {ban.set_by}"
+        notes = [f"by {ban.set_by.split('!')[0]}"]
         if ban.reason:
-            line += f": {ban.reason}"
+            notes.append(ban.reason)
         if ban.expires_at:
-            line += f" (expires {ban.expires_at.strftime('%Y-%m-%d %H:%M UTC')})"
-        await bot.notice(trigger.nick, line)  # type: ignore[attr-defined]
+            notes.append(f"until {ban.expires_at:%Y-%m-%d %H:%M} UTC")
+        items.append(f"{ban.hostmask} ({', '.join(notes)})")
+    # One line; long lists are split automatically
+    await bot.notice(  # type: ignore[attr-defined]
+        trigger.nick, f"Bans in {trigger.channel} ({len(items)}): {'; '.join(items)}"
+    )
 
 
 @plugin.command(
@@ -365,8 +370,19 @@ async def _store_ban(
     mask: str,
     reason: str,
     expires_at: datetime | None = None,
+    action: str = "ban.add",
 ) -> None:
     from pybot.core.database import add_ban, get_session
 
     async with get_session() as session:
         await add_ban(session, channel, mask, reason, trigger.hostmask, expires_at)
+        until = f", until {expires_at:%Y-%m-%d %H:%M} UTC" if expires_at else ""
+        await _audit(trigger, action, mask, f"{channel}: {reason}{until}", session)
+
+
+async def _audit(
+    trigger: Trigger, action: str, target: str, details: str = "", session: object = None
+) -> None:
+    from pybot.core.audit import audit
+
+    await audit(trigger.hostmask, action, target, details, "irc", session)  # type: ignore[arg-type]

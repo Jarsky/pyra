@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from pybot.core.audit import audit
 from pybot.web.app import templates
 from pybot.web.auth import get_current_user, is_owner_request
 
@@ -27,9 +28,10 @@ async def users_list(
     offset = (page - 1) * limit
 
     async with get_session() as session:
-        query = select(User).options(selectinload(User.flags))
+        query = select(User).options(selectinload(User.flags), selectinload(User.hosts))
         if q:
             query = query.where(User.nick.ilike(f"%{q}%") | User.hostmask.ilike(f"%{q}%"))
+        query = query.order_by(User.nick)
         query = query.offset(offset).limit(limit)
         result = await session.execute(query)
         users = result.scalars().all()
@@ -79,7 +81,7 @@ async def update_flags(
             if action == "add":
                 await grant_flag(session, actor_flags, target_user, flag, ch, granted_by=username)
             elif action == "remove":
-                await revoke_flag(session, actor_flags, target_user, flag, ch)
+                await revoke_flag(session, actor_flags, target_user, flag, ch, actor=username)
             else:
                 return RedirectResponse(
                     url=f"/users?error=Unknown+action:+{quote_plus(action)}", status_code=303
@@ -95,6 +97,45 @@ async def update_flags(
         url=f"/users?success=Flag+{flag}+{verb}+for+{target_user.nick}.",
         status_code=303,
     )
+
+
+@router.post("/{user_id}/hosts")
+async def update_hosts(
+    user_id: int,
+    request: Request,
+    username: str = Depends(get_current_user),
+    action: str = Form(...),
+    mask: str = Form(...),
+) -> RedirectResponse:
+    """Add or remove one of a user's hostmasks."""
+    from urllib.parse import quote_plus
+
+    from sqlalchemy import select
+
+    from pybot.core.database import User, get_session
+    from pybot.core.permissions import add_host, remove_host
+
+    mask = mask.strip()
+    try:
+        async with get_session() as session:
+            user = (
+                await session.execute(select(User).where(User.id == user_id))
+            ).scalar_one_or_none()
+            if user is None:
+                return RedirectResponse(url="/users?error=User+not+found.", status_code=303)
+            if action == "add":
+                done = await add_host(session, request.state.user_flags, user, mask, username)
+                message = (
+                    f"Added {mask} to {user.nick}." if done else f"{user.nick} already has {mask}."
+                )
+            else:
+                done = await remove_host(session, request.state.user_flags, user, mask, username)
+                message = (
+                    f"Removed {mask} from {user.nick}." if done else f"No such host on {user.nick}."
+                )
+    except (PermissionError, ValueError) as exc:
+        return RedirectResponse(url=f"/users?error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url=f"/users?success={quote_plus(message)}", status_code=303)
 
 
 @router.post("/{user_id}/delete")
@@ -124,5 +165,6 @@ async def delete_user(
             )
         nick = user.nick
         await session.delete(user)
+        await audit(username, "user.delete", nick, user.hostmask or "", "web", session)
 
     return RedirectResponse(url=f"/users?success=User+{nick}+deleted.", status_code=303)

@@ -2,6 +2,8 @@
 {% block title %}Logs{% endblock %}
 {% block content %}
 <h2>Logs</h2>
+<p><small>Messages are kept {% if retention_days %}for {{ retention_days }} days{% else %}forever{% endif %}.
+  <a href="/logs/audit">Audit log</a>: who changed flags, users, bans, plugins and settings.</small></p>
 
 <form method="get" action="/logs" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem">
   <input type="text" name="channel" value="{{ filter_channel }}" placeholder="Channel (e.g. #general)">

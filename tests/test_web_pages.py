@@ -20,7 +20,7 @@ from pybot.web.auth import create_access_token, hash_password
 
 SECRET = "testsecret-0123456789abcdef0123456789abcdef"
 
-PLUGIN = '''
+PLUGIN = """
 __plugin_config__ = {
     "api_key": {"type": "str", "secret": True, "help": "Service key"},
     "units": {"type": "choice", "choices": ["metric", "imperial"], "default": "metric"},
@@ -33,7 +33,7 @@ from pybot import plugin
 @plugin.command("wx")
 async def wx(bot, trigger):
     pass
-'''
+"""
 
 
 @pytest.fixture
@@ -129,3 +129,39 @@ def test_non_owner_admins_cannot_change_plugins(client: TestClient) -> None:
     unload = client.post("/plugins/wxplug/unload", follow_redirects=False)
     assert "Owner+flag+required" in unload.headers["location"]
     assert client.bot.plugin_loader.is_loaded("wxplug")  # type: ignore[attr-defined]
+
+
+def test_users_page_hosts_and_audit_page(client: TestClient) -> None:
+    page = client.get("/users/")
+    assert page.status_code == 200
+    assert 'placeholder="*!ident@host"' in page.text and "*!boss@home" in page.text
+
+    import re
+
+    helper_id = re.search(
+        r'action="/users/(\d+)/hosts"[^>]*>\s*<input type="hidden" name="action" value="add">',
+        page.text,
+    )
+    assert helper_id
+    user_id = helper_id.group(1)
+    added = client.post(
+        f"/users/{user_id}/hosts",
+        data={"action": "add", "mask": "*!second@laptop.example"},
+        follow_redirects=False,
+    )
+    assert "success" in added.headers["location"]
+    flagged = client.post(
+        f"/users/{user_id}/flags",
+        data={"action": "add", "flag": "v", "channel": ""},
+        follow_redirects=False,
+    )
+    assert "success" in flagged.headers["location"]
+
+    audit = client.get("/logs/audit")
+    assert audit.status_code == 200
+    assert "host.add" in audit.text and "*!second@laptop.example" in audit.text
+    assert "flag.grant" in audit.text
+    assert client.get("/logs/audit?action=host.").text.count("<code>host.add</code>") == 1
+
+    logs = client.get("/logs/")
+    assert "kept for 30 days" in logs.text

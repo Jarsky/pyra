@@ -11,6 +11,7 @@ Run `pybot-setup` to generate one interactively, or copy `config/config.example.
 core:
   nick: Pyra               # Primary IRC nick
   altnicks: [Pyra_, Pyra__]  # Fallbacks if nick is taken
+  keepnick: true           # On an altnick, take `nick` back as soon as it is free
   ident: pyra              # IRC ident (username)
   realname: "Pyra IRC Bot" # IRC real name
   command_prefix: "!"      # Prefix for commands (e.g. !help)
@@ -100,10 +101,12 @@ database:
   # PostgreSQL
   # url: "postgresql+asyncpg://user:password@localhost:5432/pyra"
 
-  pool_pre_ping: true      # Verify connections before use
-  pool_recycle: 3600       # Recycle connections after 1 hour
   echo: false              # Log all SQL (debug only)
+  log_retention_days: 30   # Message log (web Logs page, !history) kept this long; 0 = forever
 ```
+
+Old messages are deleted at startup and every 6 hours (`core.prune_message_log` in `!jobs`).
+The audit log is kept.
 
 ---
 

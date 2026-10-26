@@ -77,6 +77,7 @@ channels:
 database:
   # SQLite (default — suitable for basic installs):
   url: "sqlite+aiosqlite:///data/pyra.db"
+  log_retention_days: 30          # Message log (Logs page, !history) kept this long; 0 = forever
 
   # PostgreSQL (recommended for stability and performance, especially with many plugins/users):
   # url: "postgresql+asyncpg://pyra:password@localhost/pyra"

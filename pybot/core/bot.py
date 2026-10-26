@@ -53,6 +53,7 @@ class ChannelState:
     name: str
     topic: str = ""
     modes: str = ""
+    limit: int | None = None  # +l value, if set
     nicks: dict[str, NickState] = field(default_factory=dict)  # lowercased nick key
     bans: set[str] = field(default_factory=set)  # ban masks
 
@@ -75,6 +76,8 @@ class ChannelState:
             ns.nick = new
             self.nicks[new.lower()] = ns
 
+
+KEEPNICK_INTERVAL = 60.0  # seconds between ISON checks when MONITOR isn't available
 
 # ---------------------------------------------------------------------------
 # PyraBot
@@ -101,6 +104,8 @@ class PyraBot:
         # Message dispatch: command -> list[Callable]
         self._internal_handlers: dict[str, list[Callable[[IRCMessage], Any]]] = {}
         self._register_internal_handlers()
+
+        self._keepnick_task: asyncio.Task[None] | None = None
 
         # Track names list being built during 353/366
         self._names_buffer: dict[str, list[tuple[str, set[str]]]] = {}
@@ -204,6 +209,37 @@ class PyraBot:
         """True if the bot holds op (or a higher prefix) in the channel."""
         ns = self.get_nick_in_channel(channel, self._current_nick)
         return bool(ns and ns.modes & {"o", "a", "q", "y"})
+
+    def mode_changes(self, modestr: str, args: list[str]) -> list[tuple[str, bool, str | None]]:
+        """'+o-v alice bob' -> [('o', True, 'alice'), ('v', False, 'bob')] using ISUPPORT."""
+        changes: list[tuple[str, bool, str | None]] = []
+        setting, index = True, 0
+        for char in modestr:
+            if char in "+-":
+                setting = char == "+"
+                continue
+            arg = None
+            if self.irc.mode_takes_parameter(char, setting) and index < len(args):
+                arg = args[index]
+                index += 1
+            changes.append((char, setting, arg))
+        return changes
+
+    async def send_modes(self, channel: str, changes: list[tuple[str, bool, str | None]]) -> None:
+        """Send mode changes, several per line up to the server's MODES limit (default 3)."""
+        limit = self.irc.isupport.get("MODES")
+        per_line = int(limit) if isinstance(limit, str) and limit.isdigit() else 3
+        for i in range(0, len(changes), per_line):
+            modestr, args, sign = "", [], ""
+            for char, setting, arg in changes[i : i + per_line]:
+                wanted = "+" if setting else "-"
+                if wanted != sign:
+                    modestr += wanted
+                    sign = wanted
+                modestr += char
+                if arg is not None:
+                    args.append(arg)
+            await self.mode(channel, modestr, *args)
 
     async def quit(self, message: str = "Pyra IRC Bot") -> None:
         await self.irc.quit(message)
@@ -682,6 +718,8 @@ class PyraBot:
             "ACCOUNT": [self._handle_account],
             "CHGHOST": [self._handle_chghost],
             "NOTICE": [self._handle_notice],
+            "303": [self._handle_ison],
+            "731": [self._handle_monitor_offline],
         }
 
     async def _handle_welcome(self, msg: IRCMessage) -> None:
@@ -695,6 +733,7 @@ class PyraBot:
 
         # Config autojoin channels are joined by the IRC layer; add the remembered ones
         await self._join_remembered_channels()
+        await self._start_keepnick()
 
     async def _join_remembered_channels(self) -> None:
         from pybot.core.database import get_session, remembered_channels
@@ -709,6 +748,48 @@ class PyraBot:
         for name, key in remembered:
             if name.lower() not in configured:
                 await self.join(name, key)
+
+    # ------------------------------------------------------------------
+    # Keepnick: get the configured nick back when it frees up (Eggdrop keepnick)
+    # ------------------------------------------------------------------
+
+    def _wants_nick(self) -> bool:
+        wanted = self.config.core.nick
+        return self.config.core.keepnick and self._current_nick.lower() != wanted.lower()
+
+    async def _start_keepnick(self) -> None:
+        if self._keepnick_task is not None:
+            self._keepnick_task.cancel()
+            self._keepnick_task = None
+        if not self._wants_nick():
+            return
+        logger.info(f"Using {self._current_nick}; will take {self.config.core.nick} back when free")
+        if self.irc.isupport.get("MONITOR"):
+            # The server tells us (731) when the nick goes offline
+            await self.irc.send(f"MONITOR + {self.config.core.nick}")
+        else:
+            self._keepnick_task = asyncio.create_task(self._keepnick_loop(), name="keepnick")
+
+    async def _keepnick_loop(self) -> None:
+        while self._wants_nick():
+            await self.irc.send(f"ISON {self.config.core.nick}")
+            await asyncio.sleep(KEEPNICK_INTERVAL)
+
+    async def _try_wanted_nick(self) -> None:
+        if self._wants_nick():
+            await self.irc.nick(self.config.core.nick)
+
+    async def _handle_ison(self, msg: IRCMessage) -> None:
+        """303 RPL_ISON — the nick is free if the server didn't list it."""
+        online = {n.lower() for n in msg.text.split()}
+        if self.config.core.nick.lower() not in online:
+            await self._try_wanted_nick()
+
+    async def _handle_monitor_offline(self, msg: IRCMessage) -> None:
+        """731 RPL_MONOFFLINE — a monitored nick went offline."""
+        offline = {n.split("!", 1)[0].lower() for n in msg.text.split(",")}
+        if self.config.core.nick.lower() in offline:
+            await self._try_wanted_nick()
 
     async def _handle_notice(self, msg: IRCMessage) -> None:
         """Route NOTICE events to the services interface for service replies."""
@@ -731,6 +812,7 @@ class PyraBot:
             self.channels[channel.lower()] = ChannelState(name=channel)
             logger.info(f"Joined {channel}")
             await self.irc.send(f"WHO {channel}")
+            await self.irc.send(f"MODE {channel}")  # current modes (324), e.g. for chanmode/+l
         else:
             ch = self.channels.get(channel.lower())
             if ch:
@@ -750,6 +832,8 @@ class PyraBot:
         nick = msg.nick
         if nick.lower() == self._current_nick.lower():
             return
+        if nick.lower() == self.config.core.nick.lower():
+            await self._try_wanted_nick()  # whoever had our nick just quit
         for ch in self.channels.values():
             ch.remove_nick(nick)
 
@@ -761,6 +845,12 @@ class PyraBot:
         if old_nick.lower() == self._current_nick.lower():
             self._current_nick = new_nick
             logger.info(f"Nick changed to {new_nick}")
+            if new_nick.lower() == self.config.core.nick.lower() and self.irc.isupport.get(
+                "MONITOR"
+            ):
+                await self.irc.send(f"MONITOR - {new_nick}")
+        elif old_nick.lower() == self.config.core.nick.lower():
+            await self._try_wanted_nick()  # whoever had our nick just changed away
         for ch in self.channels.values():
             ch.rename_nick(old_nick, new_nick)
 
@@ -893,6 +983,8 @@ class PyraBot:
                     channel.bans.add(arg)
                 else:
                     channel.bans.discard(arg)
+            if char == "l":
+                channel.limit = int(arg) if setting and arg and arg.isdigit() else None
 
             if setting:
                 mode_flags.add(char)
@@ -1003,6 +1095,16 @@ class PyraBot:
         self.scheduler = Scheduler(self)
         await self.scheduler.start()
 
+        # Message log retention: once now, then every 6 hours (listed by !jobs)
+        from pybot.plugin import IntervalHandler
+
+        await self.prune_message_log()
+        self.scheduler.add_interval_handler(
+            IntervalHandler(
+                seconds=6 * 3600, cron=None, func=self.prune_message_log, plugin_name="core"
+            )
+        )
+
         # Load plugins
         from pathlib import Path
 
@@ -1041,6 +1143,23 @@ class PyraBot:
 
         # Connect to IRC
         await self.irc.run()
+
+    async def prune_message_log(self, _bot: Any = None) -> int:
+        """Delete message log entries older than database.log_retention_days (0 = keep all)."""
+        from pybot.core.database import get_session, prune_logs
+
+        days = self.config.database.log_retention_days
+        if days <= 0:
+            return 0
+        try:
+            async with get_session() as session:
+                removed = await prune_logs(session, days)
+        except Exception as exc:
+            logger.warning(f"Message log pruning failed: {exc}")
+            return 0
+        if removed:
+            logger.info(f"Pruned {removed} message log entries older than {days} days")
+        return removed
 
     async def _bootstrap_owner_account(self) -> None:
         """Ensure the owner record exists and matches config (core.owner*, partyline.password).
@@ -1142,6 +1261,8 @@ class PyraBot:
 
     async def _shutdown(self, reason: str = "Shutting down") -> None:
         logger.info("Shutting down...")
+        if self._keepnick_task is not None:
+            self._keepnick_task.cancel()
         if self.scheduler:
             await self.scheduler.stop()
         if self.partyline:

@@ -13,6 +13,7 @@ import yaml
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from pybot.core.audit import audit
 from pybot.core.config import save_plugin_vars as write_plugin_vars
 from pybot.core.plugin_schema import form_fields, masked, merge_settings, parse_form, plugin_schema
 from pybot.web.app import templates
@@ -270,6 +271,7 @@ async def upload_plugin(
         )
 
     path.write_text(text, encoding="utf-8")
+    await audit(username, "plugin.upload", name, str(path), source="web")
 
     if bot.plugin_loader:
         _register_available(bot.plugin_loader, name, path)
@@ -357,6 +359,7 @@ async def cmd_{name}(bot: object, trigger: Trigger) -> None:
     )
 '''
     path.write_text(skeleton, encoding="utf-8")
+    await audit(username, "plugin.create", name, str(path), source="web")
 
     if bot.plugin_loader:
         _register_available(bot.plugin_loader, name, path)
@@ -405,6 +408,7 @@ async def save_plugin_vars(
     config_path = _resolve_config_path()
     try:
         bot.config = write_plugin_vars(config_path, bot.config, plugin_name, parsed)
+        await audit(username, "plugin.vars", plugin_name, "YAML editor", source="web")
     except Exception as exc:
         return RedirectResponse(
             url=f"/plugins/{plugin_name}?error={quote_plus(str(exc))}",
@@ -449,6 +453,8 @@ async def save_plugin_settings(
     try:
         values = merge_settings(current, parse_form(schema, form, current))
         bot.config = write_plugin_vars(_resolve_config_path(), bot.config, plugin_name, values)
+        changed = sorted(k for k in set(values) | set(current) if values.get(k) != current.get(k))
+        await audit(username, "plugin.settings", plugin_name, ", ".join(changed), source="web")
     except Exception as exc:
         return RedirectResponse(
             url=f"/plugins/{plugin_name}?error={quote_plus(str(exc))}", status_code=303
@@ -500,6 +506,7 @@ async def save_plugin_script(
         )
 
     path.write_text(script_content, encoding="utf-8")
+    await audit(username, "plugin.script", plugin_name, str(path), source="web")
     _register_available(bot.plugin_loader, plugin_name, path)
 
     if reload_after and bot.plugin_loader.is_loaded(plugin_name):
@@ -565,6 +572,7 @@ async def load_plugin(
                     status_code=303,
                 )
             await bot.plugin_loader.enable(plugin_name)  # remembered across restarts
+            await audit(username, "plugin.load", plugin_name, source="web")
             return RedirectResponse(
                 url=f"/plugins?success={plugin_name}+loaded+successfully.",
                 status_code=303,
@@ -592,6 +600,7 @@ async def unload_plugin(
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.disable(plugin_name)  # remembered across restarts
+            await audit(username, "plugin.unload", plugin_name, source="web")
             return RedirectResponse(
                 url=f"/plugins?success={plugin_name}+unloaded.",
                 status_code=303,

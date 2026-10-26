@@ -12,6 +12,7 @@ Pyra uses an Eggdrop-style flag-based ACL. Each user has a hostmask pattern (e.g
 |------|------|-------------|
 | `n` | Owner | Full control — implies all other flags |
 | `a` | Admin | Manage bot, load/unload plugins, add/remove users |
+| `m` | Master | Manage `o`/`v`/`k`/`b` flags in every channel; implies `o` and `v` |
 | `o` | Op | Channel moderation commands |
 | `v` | Voice | Trusted user, some restricted commands |
 | `b` | Bot | Peer bot — some special treatment |
@@ -24,6 +25,7 @@ Applied per-channel (e.g. `#general+o`):
 
 | Flag | Meaning |
 |------|---------|
+| `m` | Channel master — manage `o`/`v`/`k`/`b` flags of users in this channel; implies `o`/`v` here |
 | `o` | Channel op — moderation in this channel |
 | `v` | Voice — trusted in this channel |
 | `k` | Autokick: kickbanned on join (also works as a global flag) |
@@ -43,6 +45,25 @@ The built-in `changuard` plugin acts in channels where the bot has ops:
 
 Turn these on in the web UI (**Channels** → **Settings**) or with
 `!chanset autoop true`, `!chanset autovoice true`, `!chanset enforce_bans false`.
+
+### Flood protection and channel modes
+
+The built-in `chanprotect` plugin (also needs ops) uses these channel settings:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `flood_join` | `5:60` | joins per host within seconds before a kickban (`0` = off) |
+| `flood_nick` | `5:60` | nick changes per host |
+| `flood_ctcp` | `3:60` | CTCPs to the channel per host |
+| `flood_ban_minutes` | `10` | length of flood kickbans (lifted automatically) |
+| `autolimit` | `0` | keep `+l` at users + N, so a mass join stops at N (`0` = off) |
+| `chanmode` | | modes to enforce, e.g. `+nt-i` or `+ntk key`; changes are reverted |
+| `bitch` | `false` | only users with the `o` flag may hold ops |
+| `protectops` | `false` | re-op `o`-flagged users deopped by someone without `m`/`a`/`n` |
+
+Flood checks skip owners, admins, masters, users with `o`/`v`/`X` and anyone currently opped or
+voiced. A host that sends the bot itself 5 CTCPs within 30 seconds is ignored for 5 minutes.
+Don't put `l` in `chanmode` when `autolimit` is on.
 
 ---
 
@@ -73,6 +94,11 @@ nick!user@host          exact match
 Flags from all matching patterns are combined, so a broad pattern (`*!*@*.example.com`)
 grants its flags to everyone it matches.
 
+A user can have several hostmasks (Eggdrop's `+host`): the one they were added with plus extra
+hosts, e.g. home and laptop. Each one grants the user's flags, so adding a host to someone is
+like granting their flags to that mask: only admins can do it, only owners for owners, and
+nick-only masks are refused for owners and admins.
+
 ---
 
 ## Managing Flags
@@ -85,9 +111,15 @@ grants its flags to everyone it matches.
 !flags <nick|mask>                  Show global flags (admin)
 !flags <nick|mask> +ov-k            Add/remove global flags (admin)
 !flags <nick|mask> #channel +o      Add/remove channel flags (admin)
-!whois <nick>                       Show a user's record and flags (admin)
+!whois <nick>                       Show a user's hosts, account and flags (admin)
+!host list|add|del <user> [mask]    Manage a user's hostmasks (admin)
 !ignore <mask> [duration]           Ignore a hostmask, e.g. 2h or 1d (admin)
+!audit [count] [who|action.]        Recent admin actions, e.g. !audit 20 flag. (admin)
 ```
+
+Channel masters (`m` on a channel, or global `m`) can use `!flags` for that channel:
+`!flags bob +ov` in the channel, or `!flags bob #chan -k` from anywhere. They can't hand out
+`m` or change global flags, and can't touch admins or owners.
 
 `!adduser` needs a name when the mask's nick is a wildcard (`!adduser *!bad@spam.host k spammer`)
 and generates a web/partyline login only for `a`/`n` users. Use the mask instead of the nick
@@ -96,11 +128,21 @@ remove `n` or change an owner's flags, and a change with a refused flag is not a
 
 ### Via web UI
 
-Navigate to **Users** → find the user → click **Edit Flags**.
+Navigate to **Users**: each user has a small form to add or remove a flag (optionally for a
+channel), and their hostmasks with buttons to add or remove one.
+
+### Audit log
+
+Changes to flags, users, hosts, bans, ignores, plugins, channel settings and the config are
+recorded with who made them (IRC hostmask, web user or partyline user) and when. Passwords are
+never recorded. See them with `!audit` or on the web under **Logs → Audit log**.
 
 ### Via partyline
 
-Not yet: the partyline has bot controls (`.say`, `.join`, `.reload`, ...) but no user commands.
+Eggdrop-style commands, with the same rules and audit log as IRC (`.help` lists them):
+`.chattr <user> [+flags-flags] [#chan]`, `.+user <name> <mask>`, `.-user <name>` (owners),
+`.+host`/`.-host <user> <mask>`, `.match <pattern>`, `.whois <user>`,
+`.chanset <#chan> <key> <value>` (or `+bitch`/`-protectops`), `.chaninfo <#chan>`, `.status`.
 
 ---
 

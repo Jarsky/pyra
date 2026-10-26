@@ -141,18 +141,10 @@ async def _on_join(bot: Any, trigger: Trigger) -> None:
 
 
 def _bot_was_opped(bot: Any, modestr: str, args: list[str]) -> bool:
-    setting, index = True, 0
-    for char in modestr:
-        if char in "+-":
-            setting = char == "+"
-            continue
-        arg = None
-        if bot.irc.mode_takes_parameter(char, setting) and index < len(args):
-            arg = args[index]
-            index += 1
-        if setting and char in _OP_MODES and arg and arg.lower() == bot.nick.lower():
-            return True
-    return False
+    return any(
+        setting and char in _OP_MODES and arg and arg.lower() == bot.nick.lower()
+        for char, setting, arg in bot.mode_changes(modestr, args)
+    )
 
 
 @plugin.event("MODE")

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<h2>Audit log</h2>
+<p><small>Administrative changes from IRC, the web UI and the partyline, newest first (UTC).
+  <a href="/logs">Back to message logs</a></small></p>
+
+<form method="get" action="/logs/audit" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem">
+  <input type="text" name="actor" value="{{ filter_actor }}" placeholder="Who (nick, mask or web user)">
+  <select name="action">
+    <option value="">All actions</option>
+    {% for prefix, label in [('flag.', 'Flags'), ('host.', 'Hosts'), ('user.', 'Users'), ('ban.', 'Bans'),
+                             ('ignore.', 'Ignores'), ('plugin.', 'Plugins'), ('channel.', 'Channels'),
+                             ('config.', 'Config'), ('partyline.', 'Partyline')] %}
+    <option value="{{ prefix }}" {% if filter_action == prefix %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+{% if entries %}
+<div style="overflow-x:auto">
+<table>
+  <thead><tr><th>When</th><th>Who</th><th>Where</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+  <tbody>
+  {% for e in entries %}
+  <tr>
+    <td><small>{{ e.at.strftime('%Y-%m-%d %H:%M:%S') }}</small></td>
+    <td class="mono"><small>{{ e.actor }}</small></td>
+    <td><small>{{ e.source }}</small></td>
+    <td><code>{{ e.action }}</code></td>
+    <td><small>{{ e.target }}</small></td>
+    <td><small>{{ e.details }}</small></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>No matching admin actions recorded yet.</p>
+{% endif %}
+{% endblock %}

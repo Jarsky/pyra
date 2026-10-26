@@ -179,28 +179,4 @@ async def _store_tempban(
         )
 
 
-# ---------------------------------------------------------------------------
-# JOIN flood detection
-# ---------------------------------------------------------------------------
-
-_join_tracker: dict[str, deque] = defaultdict(lambda: deque(maxlen=20))
-
-
-@plugin.event("JOIN")
-async def _on_join(bot: object, trigger: Trigger) -> None:
-    if trigger.nick.lower() == bot.nick.lower():  # type: ignore[attr-defined]
-        return
-    channel = trigger.message.params[0] if trigger.message.params else ""
-    if not channel:
-        return
-
-    now = asyncio.get_event_loop().time()
-    key = f"{trigger.host}!{channel}"
-    q = _join_tracker[key]
-    q.append(now)
-    recent = [t for t in q if now - t <= 10]  # 10s window
-    if len(recent) >= 4:
-        # Join flood from this host
-        hostmask = f"*!*@{trigger.host}"
-        await bot.ban(channel, hostmask)  # type: ignore[attr-defined]
-        await _store_tempban(bot, channel, hostmask, "Join flood", timedelta(minutes=3))
+# Join floods are handled by the chanprotect plugin (flood_join setting).

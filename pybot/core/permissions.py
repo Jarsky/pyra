@@ -10,7 +10,10 @@ Global flags:
   I = ignore       (bot ignores all input)
   X = exempt       (bypass flood/antispam)
 
+  m = master       (global: manage channel flags in every channel; implies o and v)
+
 Channel flags (per-channel overrides):
+  m = master       (manage o/v/k/b flags in that channel; implies o and v there)
   o = chanop       (mod commands in that channel)
   v = voice        (voice commands in that channel)
   k = autokick     (bot kicks on join)
@@ -23,7 +26,8 @@ Resolution order:
   4. channel-specific flag
   5. NickServ account match (if account provided)
 
-Identity on IRC comes from hostmask patterns and services accounts. A pattern that only
+Identity on IRC comes from hostmask patterns (a user can have several: the primary mask
+plus extra hosts) and services accounts. A pattern that only
 pins the nick ("nick!*@*") can be matched by anyone who takes that nick, so owner and
 admin flags are refused for such patterns; use a user@host mask or a services account.
 
@@ -43,9 +47,11 @@ from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 
-from pybot.core.database import Ignore, User, UserFlag
+from pybot.core.database import Ignore, User, UserFlag, UserHost
 
 PRIVILEGED_FLAGS = frozenset("na")
+# Channel flags a channel master (m) may grant or remove in their channel
+MASTER_FLAGS = frozenset("ovkb")
 
 # ---------------------------------------------------------------------------
 # Hostmask matching
@@ -92,7 +98,7 @@ def is_nick_only_mask(mask: str) -> bool:
 
 @dataclass(frozen=True)
 class _CachedUser:
-    hostmask: str
+    masks: tuple[str, ...]  # primary hostmask and extra hosts
     account: str | None
     global_flags: frozenset[str]
     channel_flags: tuple[tuple[str, str], ...]  # (lowercased channel, flag)
@@ -107,7 +113,7 @@ class _CachedIgnore:
 _generation = 0
 _user_cache: tuple[Any, int, list[_CachedUser]] | None = None
 _ignore_cache: tuple[Any, int, list[_CachedIgnore]] | None = None
-_TRACKED = (User, UserFlag, Ignore)
+_TRACKED = (User, UserFlag, UserHost, Ignore)
 
 
 def invalidate_cache() -> None:
@@ -143,10 +149,12 @@ async def _cached_users(session: AsyncSession) -> list[_CachedUser]:
     if _user_cache and _user_cache[0] is key and _user_cache[1] == _generation:
         return _user_cache[2]
     generation = _generation
-    result = await session.execute(select(User).options(selectinload(User.flags)))
+    result = await session.execute(
+        select(User).options(selectinload(User.flags), selectinload(User.hosts))
+    )
     users = [
         _CachedUser(
-            hostmask=u.hostmask or "",
+            masks=tuple(u.all_masks),
             account=u.account.lower() if u.account else None,
             global_flags=frozenset(
                 (u.global_flags or "") + "".join(f.flag for f in u.flags if f.channel is None)
@@ -203,7 +211,7 @@ async def get_identity_flags(
     global_flags: set[str] = set()
     channel_flags: set[str] = set()
     for user in await _cached_users(session):
-        by_mask = match_hostmask(user.hostmask, hostmask)
+        by_mask = any(match_hostmask(mask, hostmask) for mask in user.masks)
         by_account = account_key is not None and user.account == account_key
         if not (by_mask or by_account):
             continue
@@ -214,12 +222,12 @@ async def get_identity_flags(
 
 
 def flags_allow(flags: set[str], flag: str) -> bool:
-    """Apply the resolution rules (owner implies all; ignore denies) to a flag set."""
+    """Apply the resolution rules (owner implies all; ignore denies; master implies o/v)."""
     if "n" in flags:
         return True
     if flag != "I" and "I" in flags:
         return False
-    return flag in flags
+    return flag in flags or (flag in ("o", "v") and "m" in flags)
 
 
 async def has_flag(
@@ -282,10 +290,26 @@ def _same_channel(channel: str | None) -> Any:
 
 
 async def _check_can_change(
-    session: AsyncSession, actor_flags: set[str], user: User | None, flag: str, verb: str
+    session: AsyncSession,
+    actor_flags: set[str],
+    user: User | None,
+    flag: str,
+    verb: str,
+    channel: str | None = None,
 ) -> None:
+    """Admins/owners manage flags; channel masters (m) manage o/v/k/b in their channel.
+
+    actor_flags must include 'm' only if the actor is a master for this channel.
+    """
     if "n" not in actor_flags and "a" not in actor_flags:
-        raise PermissionError(f"Only admins (a) or owners (n) can {verb} flags")
+        if "m" in actor_flags and channel and flag in MASTER_FLAGS:
+            if user is not None and {"n", "a"} & await get_user_flags(session, user):
+                raise PermissionError("Only admins (a) or owners (n) can change an admin's flags")
+            return
+        raise PermissionError(
+            f"Only admins (a) or owners (n) can {verb} flags "
+            f"(channel masters: {''.join(sorted(MASTER_FLAGS))} on their channel)"
+        )
     if flag == "n" and "n" not in actor_flags:
         raise PermissionError(f"Only owners (n) can {verb} the owner flag")
     if user is not None and "n" not in actor_flags and "n" in await get_user_flags(session, user):
@@ -299,9 +323,10 @@ async def grant_flag(
     flag: str,
     channel: str | None = None,
     granted_by: str = "",
+    source: str | None = None,
 ) -> None:
-    """Grant a flag to a user record, enforcing who may grant what."""
-    await _check_can_change(session, actor_flags, user, flag, "grant")
+    """Grant a flag to a user record, enforcing who may grant what (and audit it)."""
+    await _check_can_change(session, actor_flags, user, flag, "grant", channel)
     if flag in PRIVILEGED_FLAGS and not user.account and is_nick_only_mask(user.hostmask):
         raise PermissionError(
             f"Refusing +{flag} for '{user.hostmask}': anyone can take that nick. "
@@ -322,6 +347,7 @@ async def grant_flag(
                 granted_at=datetime.now(tz=timezone.utc),
             )
         )
+        await _audit_flag(session, granted_by, "flag.grant", user, f"+{flag}", channel, source)
 
 
 async def revoke_flag(
@@ -330,9 +356,11 @@ async def revoke_flag(
     user: User,
     flag: str,
     channel: str | None = None,
+    actor: str = "",
+    source: str | None = None,
 ) -> bool:
-    """Remove a flag from a user record. Returns True if the flag was removed."""
-    await _check_can_change(session, actor_flags, user, flag, "remove")
+    """Remove a flag from a user record. Returns True if the flag was removed (and audited)."""
+    await _check_can_change(session, actor_flags, user, flag, "remove", channel)
     removed = False
     result = await session.execute(
         select(UserFlag).where(
@@ -345,14 +373,37 @@ async def revoke_flag(
     if channel is None and flag in (user.global_flags or ""):
         user.global_flags = (user.global_flags or "").replace(flag, "")
         removed = True
+    if removed:
+        await _audit_flag(session, actor, "flag.revoke", user, f"-{flag}", channel, source)
     return removed
 
 
+def _source_for(actor: str, source: str | None) -> str:
+    """Audit source: given explicitly, else IRC for hostmasks and web for user names."""
+    return source or ("irc" if "!" in actor else "web")
+
+
+async def _audit_flag(
+    session: AsyncSession,
+    actor: str,
+    action: str,
+    user: User,
+    change: str,
+    channel: str | None,
+    source: str | None = None,
+) -> None:
+    from pybot.core.audit import audit
+
+    details = f"{change} {channel}" if channel else change
+    where = _source_for(actor, source)
+    await audit(actor or "?", action, user.nick, details, source=where, session=session)
+
+
 async def find_user_by_mask(session: AsyncSession, mask: str) -> User | None:
-    """The user record registered with exactly this hostmask pattern (case-insensitive)."""
-    result = await session.execute(select(User))
+    """The user registered with exactly this hostmask (primary or extra host, any case)."""
+    result = await session.execute(select(User).options(selectinload(User.hosts)))
     for user in result.scalars().all():
-        if (user.hostmask or "").lower() == mask.lower():
+        if mask.lower() in (m.lower() for m in user.all_masks):
             return user
     return None
 
@@ -362,11 +413,11 @@ async def find_users_for_identity(
 ) -> list[User]:
     """User records an IRC identity matches (by hostmask pattern or services account)."""
     account_key = account.lower() if account else None
-    result = await session.execute(select(User))
+    result = await session.execute(select(User).options(selectinload(User.hosts)))
     return [
         u
         for u in result.scalars().all()
-        if match_hostmask(u.hostmask or "", hostmask)
+        if any(match_hostmask(m, hostmask) for m in u.all_masks)
         or (account_key is not None and (u.account or "").lower() == account_key)
     ]
 
@@ -385,7 +436,7 @@ async def add_flag(
 
     A new user is named nick, or the mask's nick part.
     """
-    await _check_can_change(session, actor_flags, None, flag, "grant")
+    await _check_can_change(session, actor_flags, None, flag, "grant", channel)
     user = await find_user_by_mask(session, target_hostmask)
     if user is None:
         if not nick:
@@ -408,13 +459,83 @@ async def remove_flag(
     target_hostmask: str,
     flag: str,
     channel: str | None = None,
+    actor: str = "",
 ) -> bool:
     """Remove a flag from the user registered with target_hostmask."""
-    await _check_can_change(session, actor_flags, None, flag, "remove")
+    await _check_can_change(session, actor_flags, None, flag, "remove", channel)
     user = await find_user_by_mask(session, target_hostmask)
     if user is None:
         return False
-    return await revoke_flag(session, actor_flags, user, flag, channel)
+    return await revoke_flag(session, actor_flags, user, flag, channel, actor)
+
+
+# ---------------------------------------------------------------------------
+# Hosts (several hostmasks per user)
+# ---------------------------------------------------------------------------
+
+
+async def _check_identity_change(session: AsyncSession, actor_flags: set[str], user: User) -> None:
+    """Changing someone's hosts changes who gets their flags: admins only, owners for owners."""
+    if "n" not in actor_flags and "a" not in actor_flags:
+        raise PermissionError("Only admins (a) or owners (n) can change a user's hosts")
+    if "n" not in actor_flags and "n" in await get_user_flags(session, user):
+        raise PermissionError("Only owners (n) can change an owner's hosts")
+
+
+async def add_host(
+    session: AsyncSession,
+    actor_flags: set[str],
+    user: User,
+    mask: str,
+    actor: str = "",
+    source: str | None = None,
+) -> bool:
+    """Add an extra hostmask to a user. Returns False if they already have it."""
+    from pybot.core.audit import audit
+
+    await _check_identity_change(session, actor_flags, user)
+    if "!" not in mask or "@" not in mask:
+        raise ValueError(f"'{mask}' is not a hostmask (nick!user@host)")
+    privileged = PRIVILEGED_FLAGS & await get_user_flags(session, user)
+    if privileged and not user.account and is_nick_only_mask(mask):
+        raise PermissionError(
+            f"Refusing '{mask}' for a user with +{''.join(sorted(privileged))}: "
+            "anyone can take that nick."
+        )
+    await session.refresh(user, ["hosts"])
+    if mask.lower() in (m.lower() for m in user.all_masks):
+        return False
+    session.add(UserHost(user_id=user.id, mask=mask))
+    await audit(actor or "?", "host.add", user.nick, mask, _source_for(actor, source), session)
+    return True
+
+
+async def remove_host(
+    session: AsyncSession,
+    actor_flags: set[str],
+    user: User,
+    mask: str,
+    actor: str = "",
+    source: str | None = None,
+) -> bool:
+    """Remove one of a user's hostmasks (the primary one too). Returns False if not found."""
+    from pybot.core.audit import audit
+
+    await _check_identity_change(session, actor_flags, user)
+    await session.refresh(user, ["hosts"])
+    removed = False
+    for host in list(user.hosts):
+        if host.mask.lower() == mask.lower():
+            await session.delete(host)
+            removed = True
+    if (user.hostmask or "").lower() == mask.lower():
+        user.hostmask = ""
+        removed = True
+    if removed:
+        await audit(
+            actor or "?", "host.remove", user.nick, mask, _source_for(actor, source), session
+        )
+    return removed
 
 
 async def add_owner_bootstrap(

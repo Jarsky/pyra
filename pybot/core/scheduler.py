@@ -108,6 +108,11 @@ class Scheduler:
         if handler.cron:
             return f"cron:{handler.cron}"
         if handler.seconds is not None:
+            from pybot.plugin import format_age
+
+            whole = int(handler.seconds)
+            if whole == handler.seconds:
+                return f"every {format_age(whole)}"
             return f"every {handler.seconds:g}s"
         return "unknown"
 

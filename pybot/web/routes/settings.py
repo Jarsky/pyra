@@ -9,6 +9,7 @@ import yaml
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from pybot.core.audit import audit
 from pybot.web.app import templates
 from pybot.web.auth import get_current_user, is_owner_request
 
@@ -95,6 +96,7 @@ async def save_settings(
     config_path = _resolve_config_path()
     config_path.parent.mkdir(exist_ok=True)
     config_path.write_text(config_yaml, encoding="utf-8")
+    await audit(username, "config.save", str(config_path), source="web")
 
     return RedirectResponse(
         url="/settings?success=Settings+saved+successfully.",

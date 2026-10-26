@@ -20,8 +20,11 @@ Commands:
   !quit [message]                 Disconnect and exit (owner only)
   !adduser <nick!user@host> <flags> [name]  Add a user with global flags (owner)
   !deluser <nick>                 Remove a user (owner)
-  !flags <nick|mask> [#channel] [+flags-flags]  Show or change global/channel flags
-  !whois <nick>                   Show a user's record and flags
+  !flags <nick|mask> [#channel] [+flags-flags]  Show or change flags (channel masters:
+                                  o/v/k/b in their channel)
+  !whois <nick>                   Show a user's hosts, account and flags
+  !host <list|add|del> <user> [mask]  Manage a user's hostmasks
+  !audit [count] [actor|action.]  Recent admin actions
   !setpass <nick> <password>      Set Web UI/partyline password for a user (owner)
   !passwd <newpassword>           Change your own Web UI/partyline password
   !useserviceauth                 Bind your IRC services account as owner account (owner only)
@@ -69,6 +72,7 @@ async def cmd_join(bot: object, trigger: Trigger) -> None:
     channel = trigger.args[0]
     key = trigger.args[1] if len(trigger.args) > 1 else ""
     await bot.join_channel(channel, key)  # type: ignore[attr-defined]
+    await _audit(trigger, "channel.join", channel)
 
 
 @plugin.command(
@@ -81,6 +85,7 @@ async def cmd_part(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, "Usage: !part [#channel] [reason]")  # type: ignore[attr-defined]
         return
     await bot.part_channel(channel, reason)  # type: ignore[attr-defined]
+    await _audit(trigger, "channel.part", channel)
 
 
 @plugin.command("quit", privilege="n", help="Shut down the bot", usage="!quit [message]")
@@ -119,6 +124,7 @@ async def cmd_load(bot: object, trigger: Trigger) -> None:
     await loader.rescan()  # pick up a file added a moment ago
     try:
         await loader.enable(name)
+        await _audit(trigger, "plugin.load", name)
         await bot.reply(trigger, f"Plugin '{name}' loaded.")  # type: ignore[attr-defined]
     except KeyError:
         await bot.reply(trigger, f"Plugin file '{name}.py' not found.")  # type: ignore[attr-defined]
@@ -138,6 +144,7 @@ async def cmd_unload(bot: object, trigger: Trigger) -> None:
         return
     try:
         await bot.plugin_loader.disable(name)  # type: ignore[attr-defined]
+        await _audit(trigger, "plugin.unload", name)
         await bot.reply(trigger, f"Plugin '{name}' unloaded.")  # type: ignore[attr-defined]
     except Exception as exc:
         await bot.reply(trigger, f"Failed to unload '{name}': {exc}")  # type: ignore[attr-defined]
@@ -177,6 +184,7 @@ async def cmd_plugin(bot: object, trigger: Trigger) -> None:
         return
     await bot.set_plugin_enabled_in_channel(name, channel, turn_on)  # type: ignore[attr-defined]
     state = "on" if turn_on else "off"
+    await _audit(trigger, f"plugin.{state}", name, channel)
     await bot.reply(trigger, f"Plugin '{name}' is now {state} in {channel}.")  # type: ignore[attr-defined]
 
 
@@ -317,6 +325,8 @@ async def cmd_ignore(bot: object, trigger: Trigger) -> None:
                 active=True,
             )
         )
+        until = f"until {expires_at:%Y-%m-%d %H:%M} UTC" if expires_at else "permanent"
+        await _audit(trigger, "ignore.add", mask, until, session)
     await bot.reply(trigger, f"Added ignore for {mask}.")  # type: ignore[attr-defined]
 
 
@@ -341,6 +351,7 @@ async def cmd_unignore(bot: object, trigger: Trigger) -> None:
         )
         for ignore in result.scalars().all():
             ignore.active = False
+        await _audit(trigger, "ignore.remove", mask, session=session)
     await bot.reply(trigger, f"Removed ignore for {mask}.")  # type: ignore[attr-defined]
 
 
@@ -357,13 +368,14 @@ async def cmd_ignores(bot: object, trigger: Trigger) -> None:
     if not ignores:
         await bot.reply(trigger, "No active ignores.")  # type: ignore[attr-defined]
         return
+    items = []
     for ig in ignores:
-        line = f"{ig.hostmask}"
-        if ig.reason:
-            line += f" — {ig.reason}"
+        notes = [ig.reason] if ig.reason else []
         if ig.expires_at:
-            line += f" (expires {ig.expires_at.strftime('%Y-%m-%d %H:%M UTC')})"
-        await bot.notice(trigger.nick, line)  # type: ignore[attr-defined]
+            notes.append(f"until {ig.expires_at:%Y-%m-%d %H:%M} UTC")
+        items.append(ig.hostmask + (f" ({', '.join(notes)})" if notes else ""))
+    # One line; long lists are split automatically
+    await bot.notice(trigger.nick, f"Ignores ({len(items)}): {'; '.join(items)}")  # type: ignore[attr-defined]
 
 
 @plugin.command(
@@ -411,6 +423,7 @@ async def cmd_adduser(bot: object, trigger: Trigger) -> None:
             if user is not None and needs_login:
                 user.password_hash = hash_password(generated_password)
             name = user.nick if user is not None else name
+            await _audit(trigger, "user.add", name, f"{mask} +{flags_str}", session)
     except PermissionError as e:
         await bot.reply(trigger, str(e))  # type: ignore[attr-defined]
         return
@@ -446,6 +459,7 @@ async def cmd_deluser(bot: object, trigger: Trigger) -> None:
             return
         if users:
             await session.delete(users[0])
+            await _audit(trigger, "user.delete", nick, users[0].hostmask or "", session)
             await bot.reply(trigger, f"Deleted user {nick}.")  # type: ignore[attr-defined]
         else:
             await bot.reply(trigger, f"User '{nick}' not found.")  # type: ignore[attr-defined]
@@ -456,8 +470,7 @@ _FLAGS_USAGE = "!flags <nick|mask> [#channel] [+flags-flags]"
 
 @plugin.command(
     "flags",
-    privilege="a",
-    help="Show or change a user's global or channel flags",
+    help="Show or change a user's flags (admins; channel masters for their channel)",
     usage=_FLAGS_USAGE,
 )
 async def cmd_flags(bot: object, trigger: Trigger) -> None:
@@ -472,6 +485,16 @@ async def cmd_flags(bot: object, trigger: Trigger) -> None:
     if args or (change is not None and not re.fullmatch(r"([+-][A-Za-z]+)+", change)):
         await bot.reply(trigger, f"Usage: {_FLAGS_USAGE}")  # type: ignore[attr-defined]
         return
+
+    actor_flags = await _actor_flags_for(trigger, channel or trigger.channel)
+    if not actor_flags & {"n", "a", "m"}:
+        await bot.notice(trigger.nick, "Permission denied.")  # type: ignore[attr-defined]
+        return
+    if "m" in actor_flags and not actor_flags & {"n", "a"} and change is not None and not channel:
+        channel = trigger.channel  # a master changes flags in their own channel
+        if not channel:
+            await bot.reply(trigger, f"Give the channel: {_FLAGS_USAGE}")  # type: ignore[attr-defined]
+            return
 
     from sqlalchemy import func, select
 
@@ -492,10 +515,12 @@ async def cmd_flags(bot: object, trigger: Trigger) -> None:
                         sign = char
                     elif sign == "+":
                         await grant_flag(
-                            session, _actor_flags(trigger), user, char, channel, trigger.hostmask
+                            session, actor_flags, user, char, channel, trigger.hostmask
                         )
                     else:
-                        await revoke_flag(session, _actor_flags(trigger), user, char, channel)
+                        await revoke_flag(
+                            session, actor_flags, user, char, channel, trigger.hostmask
+                        )
                 await session.flush()
             global_flags = await get_user_flags(session, user)
             channel_flags = set()
@@ -580,6 +605,7 @@ async def cmd_setpass(bot: object, trigger: Trigger) -> None:
             return
 
         users[0].password_hash = hash_password(password)
+        await _audit(trigger, "user.password", nick, "set by owner", session)
 
     await bot.reply(trigger, f"Password updated for {nick}.")  # type: ignore[attr-defined]
 
@@ -620,6 +646,7 @@ async def cmd_passwd(bot: object, trigger: Trigger) -> None:
             return
 
         user.password_hash = hash_password(password)
+        await _audit(trigger, "user.password", user.nick, "changed own", session)
 
     await bot.reply(trigger, "Your password has been updated.")  # type: ignore[attr-defined]
 
@@ -635,40 +662,41 @@ async def cmd_whois(bot: object, trigger: Trigger) -> None:
         await bot.reply(trigger, "Usage: !whois <nick>")  # type: ignore[attr-defined]
         return
     nick = trigger.args[0]
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from sqlalchemy.orm import selectinload
 
     from pybot.core.database import User, get_session
 
     async with get_session() as session:
         result = await session.execute(
-            select(User).options(selectinload(User.flags)).where(User.nick == nick)
+            select(User)
+            .options(selectinload(User.flags), selectinload(User.hosts))
+            .where(func.lower(User.nick) == nick.lower())
         )
-        user = result.scalar_one_or_none()
+        users = result.scalars().all()
 
-    if not user:
+    if not users:
         await bot.reply(trigger, f"No record for '{nick}'.")  # type: ignore[attr-defined]
         return
-
-    await bot.notice(trigger.nick, f"Nick: {user.nick}")  # type: ignore[attr-defined]
-    await bot.notice(trigger.nick, f"Hostmask: {user.hostmask}")  # type: ignore[attr-defined]
-    if user.account:
-        await bot.notice(trigger.nick, f"Account: {user.account}")  # type: ignore[attr-defined]
-    global_flags = user.global_flags or ""
-    for f in user.flags:
-        if f.channel is None:
-            global_flags += f.flag
-    if global_flags:
-        await bot.notice(trigger.nick, f"Global flags: {global_flags}")  # type: ignore[attr-defined]
-    chan_flags = [(f.channel, f.flag) for f in user.flags if f.channel]
-    for ch, fl in chan_flags:
-        await bot.notice(trigger.nick, f"Channel flag: {ch} +{fl}")  # type: ignore[attr-defined]
-    if user.last_seen:
-        await bot.notice(  # type: ignore[attr-defined]
-            trigger.nick,
-            f"Last seen: {user.last_seen.strftime('%Y-%m-%d %H:%M UTC')} "
-            f"in {user.last_seen_where or '?'}",
-        )
+    for user in users:
+        global_flags = set(user.global_flags or "") | {f.flag for f in user.flags if not f.channel}
+        by_channel: dict[str, str] = {}
+        for f in user.flags:
+            if f.channel:
+                by_channel[f.channel] = by_channel.get(f.channel, "") + f.flag
+        lines = [
+            f"{user.nick}: hosts {', '.join(user.all_masks) or 'none'}"
+            + (f" | account {user.account}" if user.account else ""),
+            "Flags: global "
+            + ("+" + "".join(sorted(global_flags)) if global_flags else "none")
+            + "".join(f" | {ch} +{''.join(sorted(fl))}" for ch, fl in sorted(by_channel.items())),
+        ]
+        if user.last_seen:
+            lines.append(
+                f"Last seen {user.last_seen:%Y-%m-%d %H:%M} UTC in {user.last_seen_where or '?'}"
+            )
+        for line in lines:
+            await bot.notice(trigger.nick, line)  # type: ignore[attr-defined]
 
 
 @plugin.command("servers", privilege="a", help="List configured IRC servers")
@@ -703,14 +731,13 @@ async def cmd_jobs(bot: object, trigger: Trigger) -> None:
         if not jobs:
             await bot.reply(trigger, "No scheduler jobs registered.")  # type: ignore[attr-defined]
             return
-        await bot.notice(trigger.nick, f"Scheduler jobs ({len(jobs)}):")  # type: ignore[attr-defined]
+        items = []
         for job in sorted(jobs, key=lambda j: str(j["name"])):
-            paused = "paused" if bool(job["paused"]) else "running"
-            next_run = str(job["next_run"] or "-")
-            await bot.notice(  # type: ignore[attr-defined]
-                trigger.nick,
-                f"{job['name']} [{paused}] {job['schedule']} next={next_run}",
-            )
+            state = " (paused)" if job["paused"] else ""
+            next_run = str(job["next_run"] or "-")[:16].replace("T", " ")
+            items.append(f"{job['name']}{state} {job['schedule']}, next {next_run}")
+        # One line; long lists are split automatically
+        await bot.notice(trigger.nick, f"Jobs ({len(items)}, UTC): {'; '.join(items)}")  # type: ignore[attr-defined]
         return
 
     if len(trigger.args) < 2:
@@ -861,6 +888,7 @@ async def cmd_useserviceauth(bot: object, trigger: Trigger) -> None:
         cleared = bool(user.hostmask) and is_nick_only_mask(user.hostmask)
         if cleared:
             user.hostmask = ""
+        await _audit(trigger, "user.account", user.nick, account, session)
 
     note = " The nick-only hostmask was removed." if cleared else ""
     await bot.reply(  # type: ignore[attr-defined]
@@ -870,9 +898,95 @@ async def cmd_useserviceauth(bot: object, trigger: Trigger) -> None:
     )
 
 
+@plugin.command(
+    "host",
+    privilege="a",
+    help="List, add or remove a user's hostmasks (Eggdrop +host/-host)",
+    usage="!host <list|add|del> <nick|mask> [nick!user@host]",
+)
+async def cmd_host(bot: object, trigger: Trigger) -> None:
+    usage = "Usage: !host <list|add|del> <nick|mask> [nick!user@host]"
+    args = trigger.args
+    action = args[0].lower() if args else ""
+    if action not in ("list", "add", "del") or len(args) < (2 if action == "list" else 3):
+        await bot.reply(trigger, usage)  # type: ignore[attr-defined]
+        return
+    mask = args[2] if len(args) > 2 else ""
+
+    from pybot.core.database import get_session
+    from pybot.core.permissions import add_host, remove_host
+
+    message = ""
+    try:
+        async with get_session() as session:
+            user, problem = await _find_user(session, args[1])
+            if user is None:
+                await bot.reply(trigger, problem)  # type: ignore[attr-defined]
+                return
+            if action == "add":
+                added = await add_host(session, _actor_flags(trigger), user, mask, trigger.hostmask)
+                message = f"Added {mask}. " if added else f"{user.nick} already has {mask}. "
+            elif action == "del":
+                removed = await remove_host(
+                    session, _actor_flags(trigger), user, mask, trigger.hostmask
+                )
+                message = f"Removed {mask}. " if removed else f"{user.nick} has no host {mask}. "
+            await session.flush()
+            await session.refresh(user, ["hosts"])
+            name, masks, account = user.nick, user.all_masks, user.account
+    except (PermissionError, ValueError) as exc:
+        await bot.reply(trigger, str(exc))  # type: ignore[attr-defined]
+        return
+    hosts = ", ".join(masks) or "none"
+    suffix = f" | account {account}" if account else ""
+    await bot.reply(trigger, f"{message}{name} hosts: {hosts}{suffix}")  # type: ignore[attr-defined]
+
+
+@plugin.command(
+    "audit",
+    privilege="a",
+    help="Show recent admin actions (newest first)",
+    usage="!audit [count] [actor or action.]",
+)
+async def cmd_audit(bot: object, trigger: Trigger) -> None:
+    from pybot.core.audit import format_entry, recent
+
+    count, actor, action = 10, "", ""
+    for arg in trigger.args:
+        if arg.isdigit():
+            count = max(1, min(50, int(arg)))
+        elif "." in arg and "!" not in arg:
+            action = arg  # e.g. "flag." or "ban.add"
+        else:
+            actor = arg
+    entries = await recent(count, actor=actor, action=action)
+    if not entries:
+        await bot.notice(trigger.nick, "No matching admin actions recorded.")  # type: ignore[attr-defined]
+        return
+    await bot.notice(trigger.nick, f"Last {len(entries)} admin actions (UTC, newest first):")  # type: ignore[attr-defined]
+    for entry in entries:
+        await bot.notice(trigger.nick, format_entry(entry))  # type: ignore[attr-defined]
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _audit(
+    trigger: Trigger, action: str, target: str = "", details: str = "", session: object = None
+) -> None:
+    from pybot.core.audit import audit
+
+    await audit(trigger.hostmask, action, target, details, "irc", session)  # type: ignore[arg-type]
+
+
+async def _actor_flags_for(trigger: Trigger, channel: str | None) -> set[str]:
+    """Privilege flags for permission checks, including m if a master for this channel."""
+    flags = _actor_flags(trigger)
+    if not flags and channel and await trigger.has_flag("m", channel):
+        flags.add("m")
+    return flags
 
 
 def _parse_duration(s: str) -> datetime:

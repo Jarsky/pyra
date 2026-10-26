@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.datastructures import FormData
 
+from pybot.core.audit import audit
 from pybot.web.app import templates
 from pybot.web.auth import get_current_user
 
@@ -157,6 +158,8 @@ async def save_channel_plugins(
         wanted = f"plugin_{name}" in form
         if wanted != enabled:
             await bot.set_plugin_enabled_in_channel(name, channel_name, wanted)
+            state = "on" if wanted else "off"
+            await audit(username, f"plugin.{state}", name, channel_name, source="web")
     return RedirectResponse(
         url=_channel_url(channel_name, "settings", success="Channel plugins saved."),
         status_code=303,
@@ -175,6 +178,8 @@ async def save_channel_settings(
     async with get_session() as session:
         for key, value in form.items():
             await set_channel_setting(session, channel_name, key, str(value))
+        details = ", ".join(f"{k}={v}" for k, v in form.items())
+        await audit(username, "channel.settings", channel_name, details, "web", session)
 
     return RedirectResponse(
         url=_channel_url(channel_name, "settings", success="Channel settings saved."),
