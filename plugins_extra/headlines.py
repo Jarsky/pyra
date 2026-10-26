@@ -36,6 +36,15 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+__plugin_config__ = {
+    "default_feed": {"type": "str", "default": "reuters_world"},
+    "max_headlines": {"type": "int", "default": 5, "min": 1, "max": 10},
+    "cache_seconds": {"type": "int", "default": 3600, "min": 60},
+    "include_global_feeds": {"type": "bool", "default": True},
+    "include_community_feeds": {"type": "bool", "default": True},
+    # "feeds" (name -> URL mapping) is edited as YAML
+}
+
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 

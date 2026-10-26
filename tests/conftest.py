@@ -64,7 +64,7 @@ MINIMAL_CONFIG: dict = {
         "enabled": False,
         "host": "127.0.0.1",
         "port": 8080,
-        "secret_key": "testsecret",
+        "secret_key": "testsecret-0123456789abcdef0123456789abcdef",
         "debug": False,
         "session_timeout": 28800,
     },

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,10 +23,14 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
+MAX_FAILED_LOGINS = 5
+LOGIN_WINDOW_SECONDS = 300
+
 
 def create_app(bot: "PyraBot") -> FastAPI:
     app = FastAPI(title="Pyra Web Admin", docs_url=None, redoc_url=None)
     app.state.bot = bot
+    failed_logins: dict[str, list[float]] = {}  # client address -> recent failure times
 
     # Trust X-Forwarded-* headers only from configured reverse proxies.
     trusted_hosts = ",".join(bot.config.web.trusted_proxies)
@@ -53,17 +58,34 @@ def create_app(bot: "PyraBot") -> FastAPI:
         username: str = Form(...),
         password: str = Form(...),
     ) -> Response:
-        # Rate limit: simple in-memory counter (production should use Redis)
         from sqlalchemy import select
 
         from pybot.core.database import User, get_session
-        from pybot.core.permissions import has_flag
+        from pybot.core.permissions import get_user_flags
+
+        client = request.client.host if request.client else "?"
+        now = time.monotonic()
+        for key in [
+            k for k, times in failed_logins.items() if now - times[-1] >= LOGIN_WINDOW_SECONDS
+        ]:
+            del failed_logins[key]
+        recent = [t for t in failed_logins.get(client, []) if now - t < LOGIN_WINDOW_SECONDS]
+        if len(recent) >= MAX_FAILED_LOGINS:
+            logger.warning(f"Web login: too many failed attempts from {client}")
+            return templates.TemplateResponse(
+                request,
+                "login.html",
+                {"request": request, "error": "Too many failed attempts. Try again later."},
+                status_code=429,
+            )
 
         async with get_session() as session:
             result = await session.execute(select(User).where(User.nick == username))
-            user = result.scalar_one_or_none()
+            user = result.scalars().first()
+            flags = await get_user_flags(session, user) if user else set()
 
         if not user or not user.password_hash or not verify_password(password, user.password_hash):
+            failed_logins[client] = [*recent, now]
             return templates.TemplateResponse(
                 request,
                 "login.html",
@@ -72,11 +94,7 @@ def create_app(bot: "PyraBot") -> FastAPI:
             )
 
         # Verify admin flag
-        async with get_session() as session:
-            is_admin = await has_flag(session, user.hostmask, "a") or await has_flag(
-                session, user.hostmask, "n"
-            )
-        if not is_admin:
+        if "n" not in flags and "a" not in flags:
             return templates.TemplateResponse(
                 request,
                 "login.html",
@@ -84,6 +102,7 @@ def create_app(bot: "PyraBot") -> FastAPI:
                 status_code=403,
             )
 
+        failed_logins.pop(client, None)
         secret = bot.config.web.secret_key.get_secret_value()
         timeout = timedelta(seconds=bot.config.web.session_timeout)
         token = create_access_token(secret, username, timeout)
@@ -94,6 +113,7 @@ def create_app(bot: "PyraBot") -> FastAPI:
             token,
             httponly=True,
             samesite="lax",
+            secure=request.url.scheme == "https",  # scheme from a trusted proxy's headers
             max_age=bot.config.web.session_timeout,
         )
         return response

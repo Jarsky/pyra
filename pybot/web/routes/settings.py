@@ -9,8 +9,9 @@ import yaml
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from pybot.core.audit import audit
 from pybot.web.app import templates
-from pybot.web.auth import get_current_user
+from pybot.web.auth import get_current_user, is_owner_request
 
 router = APIRouter()
 
@@ -34,11 +35,6 @@ async def settings_view(
     saved: str = "",
     error: str = "",
 ) -> HTMLResponse:
-    from sqlalchemy import select
-
-    from pybot.core.database import User, get_session
-    from pybot.core.permissions import has_flag
-
     bot = request.app.state.bot
     config_path = _resolve_config_path()
     if config_path.exists():
@@ -46,14 +42,11 @@ async def settings_view(
     else:
         config_yaml = yaml.dump(bot.config.model_dump(mode="json"), default_flow_style=False)
 
-    async with get_session() as session:
-        result = await session.execute(select(User).where(User.nick == username))
-        user = result.scalar_one_or_none()
-        is_owner = bool(user and await has_flag(session, user.hostmask, "n"))
+    is_owner = is_owner_request(request)
 
     status = {
         "nick": bot.nick,
-        "server": f"{bot.config.primary_server.host}:{bot.config.primary_server.port}",
+        "server": f"{bot.irc.current_server.host}:{bot.irc.current_server.port}",
         "uptime": f"{int(bot.uptime_seconds)}s",
         "channels": len(bot.channels),
         "plugins": len(bot.plugin_loader.get_loaded_plugins()) if bot.plugin_loader else 0,
@@ -81,20 +74,11 @@ async def save_settings(
     username: str = Depends(get_current_user),
     config_yaml: str = Form(...),
 ) -> RedirectResponse:
-    # Require owner flag
-    from sqlalchemy import select
-
-    from pybot.core.database import User, get_session
-    from pybot.core.permissions import has_flag
-
-    async with get_session() as session:
-        result = await session.execute(select(User).where(User.nick == username))
-        user = result.scalar_one_or_none()
-        if not user or not await has_flag(session, user.hostmask, "n"):
-            return RedirectResponse(
-                url="/settings?error=Owner+flag+required+to+edit+settings.",
-                status_code=303,
-            )
+    if not is_owner_request(request):
+        return RedirectResponse(
+            url="/settings?error=Owner+flag+required+to+edit+settings.",
+            status_code=303,
+        )
 
     try:
         parsed = yaml.safe_load(config_yaml)
@@ -112,6 +96,7 @@ async def save_settings(
     config_path = _resolve_config_path()
     config_path.parent.mkdir(exist_ok=True)
     config_path.write_text(config_yaml, encoding="utf-8")
+    await audit(username, "config.save", str(config_path), source="web")
 
     return RedirectResponse(
         url="/settings?success=Settings+saved+successfully.",

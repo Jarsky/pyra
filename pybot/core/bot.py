@@ -16,6 +16,7 @@ from loguru import logger
 
 from pybot.core.config import BotConfig
 from pybot.core.irc import IRCConnection, IRCMessage
+from pybot.core.redact import redact_message
 from pybot.core.services import ServicesInterface
 
 if TYPE_CHECKING:
@@ -52,6 +53,7 @@ class ChannelState:
     name: str
     topic: str = ""
     modes: str = ""
+    limit: int | None = None  # +l value, if set
     nicks: dict[str, NickState] = field(default_factory=dict)  # lowercased nick key
     bans: set[str] = field(default_factory=set)  # ban masks
 
@@ -74,6 +76,8 @@ class ChannelState:
             ns.nick = new
             self.nicks[new.lower()] = ns
 
+
+KEEPNICK_INTERVAL = 60.0  # seconds between ISON checks when MONITOR isn't available
 
 # ---------------------------------------------------------------------------
 # PyraBot
@@ -101,8 +105,18 @@ class PyraBot:
         self._internal_handlers: dict[str, list[Callable[[IRCMessage], Any]]] = {}
         self._register_internal_handlers()
 
+        self._keepnick_task: asyncio.Task[None] | None = None
+
         # Track names list being built during 353/366
-        self._names_buffer: dict[str, list[str]] = {}
+        self._names_buffer: dict[str, list[tuple[str, set[str]]]] = {}
+
+        # Plugin switched off per channel: {(plugin, lowercased channel)}
+        self.disabled_plugin_channels: set[tuple[str, str]] = set()
+        # Command rate limiting: user@host -> recent command times; (command, user@host) ->
+        # time the cooldown ends; user@host -> last "slow down" notice
+        self._command_times: dict[str, list[float]] = {}
+        self._cooldowns: dict[tuple[str, str], float] = {}
+        self._rate_warned: dict[str, float] = {}
 
         # Runtime observability thresholds (seconds) for profiling hotspots.
         self.slow_handler_warn_seconds: float = 0.5
@@ -175,6 +189,58 @@ class PyraBot:
     async def part(self, channel: str, message: str = "") -> None:
         await self.irc.part(channel, message)
 
+    async def join_channel(self, channel: str, key: str = "") -> None:
+        """Join a channel and remember it, so it is rejoined after restarts (Eggdrop .+chan)."""
+        from pybot.core.database import get_session, remember_channel
+
+        async with get_session() as session:
+            await remember_channel(session, channel, key)
+        await self.join(channel, key)
+
+    async def part_channel(self, channel: str, message: str = "") -> None:
+        """Part a channel and stop rejoining it on restart (Eggdrop .-chan)."""
+        from pybot.core.database import forget_channel, get_session
+
+        async with get_session() as session:
+            await forget_channel(session, channel)
+        await self.part(channel, message)
+
+    def can_set_modes(self, channel: str) -> bool:
+        """True if the bot holds op (or a higher prefix) in the channel."""
+        ns = self.get_nick_in_channel(channel, self._current_nick)
+        return bool(ns and ns.modes & {"o", "a", "q", "y"})
+
+    def mode_changes(self, modestr: str, args: list[str]) -> list[tuple[str, bool, str | None]]:
+        """'+o-v alice bob' -> [('o', True, 'alice'), ('v', False, 'bob')] using ISUPPORT."""
+        changes: list[tuple[str, bool, str | None]] = []
+        setting, index = True, 0
+        for char in modestr:
+            if char in "+-":
+                setting = char == "+"
+                continue
+            arg = None
+            if self.irc.mode_takes_parameter(char, setting) and index < len(args):
+                arg = args[index]
+                index += 1
+            changes.append((char, setting, arg))
+        return changes
+
+    async def send_modes(self, channel: str, changes: list[tuple[str, bool, str | None]]) -> None:
+        """Send mode changes, several per line up to the server's MODES limit (default 3)."""
+        limit = self.irc.isupport.get("MODES")
+        per_line = int(limit) if isinstance(limit, str) and limit.isdigit() else 3
+        for i in range(0, len(changes), per_line):
+            modestr, args, sign = "", [], ""
+            for char, setting, arg in changes[i : i + per_line]:
+                wanted = "+" if setting else "-"
+                if wanted != sign:
+                    modestr += wanted
+                    sign = wanted
+                modestr += char
+                if arg is not None:
+                    args.append(arg)
+            await self.mode(channel, modestr, *args)
+
     async def quit(self, message: str = "Pyra IRC Bot") -> None:
         await self.irc.quit(message)
 
@@ -194,8 +260,7 @@ class PyraBot:
 
     async def shutdown_process(self, reason: str = "Shutdown requested") -> None:
         """Gracefully stop the bot process."""
-        await self.quit(reason)
-        await self._shutdown()
+        await self._shutdown(reason)
 
     async def restart_process(self) -> None:
         """Restart the current bot process in-place."""
@@ -345,98 +410,180 @@ class PyraBot:
             logger.debug(f"Could not persist IRC log entry: {exc}")
 
     def _sanitize_log_message(self, msg: IRCMessage) -> str | None:
-        """Redact sensitive authentication payloads before log persistence."""
+        """Redact passwords (services logins, !passwd/!setpass) before logs and partyline."""
         message = msg.text or None
         if not message or msg.command.upper() not in {"PRIVMSG", "NOTICE"}:
             return message
-
-        target = (msg.params[0] if msg.params else "").strip().lower()
-        service = target.split("@", 1)[0]
-        if service not in {"nickserv", "authserv", "q", "userserv"}:
-            return message
-
-        stripped = message.strip()
-        upper = stripped.upper()
-        if upper.startswith("IDENTIFY"):
-            return "IDENTIFY [REDACTED]"
-        if upper.startswith("AUTH"):
-            return "AUTH [REDACTED]"
-        if upper.startswith("LOGIN"):
-            return "LOGIN [REDACTED]"
-
-        return message
+        target = msg.params[0] if msg.params else ""
+        return redact_message(target, message, self.config.core.command_prefix)
 
     async def _dispatch_to_plugins(self, msg: IRCMessage) -> None:
         """Route message to plugin event handlers and command handlers."""
+        from dataclasses import replace
+
         from pybot.plugin import get_registry
 
         registry = get_registry()
-        core = self.config.core
+        event_handlers = registry.events.get(msg.command, [])
+        is_privmsg = msg.command == "PRIVMSG"
+        if not event_handlers and not is_privmsg:
+            return
+
+        # One trigger per message; handlers get copies with their own args/match
+        base = await self._build_trigger(msg, args=[], match=None)
+        if msg.command in ("PRIVMSG", "NOTICE") and await self._is_ignored(base):
+            return
+
+        # Plugins switched off in this channel (!plugin off) get nothing from it
+        def allowed(plugin_name: str) -> bool:
+            return base.channel is None or (
+                (plugin_name, base.channel.lower()) not in self.disabled_plugin_channels
+            )
 
         # Fire all @plugin.event(cmd) handlers
-        for event_handler in registry.events.get(msg.command, []):
+        for event_handler in event_handlers:
+            if not allowed(event_handler.plugin_name):
+                continue
             asyncio.create_task(
-                self._run_plugin_handler(event_handler.func, msg),
+                self._run_plugin_handler(event_handler.func, msg, trigger=base),
                 name=f"event-{event_handler.plugin_name}-{msg.command}",
             )
 
-        # PRIVMSG routing — commands and rules
-        if msg.command == "PRIVMSG":
-            text = msg.text
+        # PRIVMSG routing — commands and rules, never for our own echoed messages
+        if not is_privmsg or msg.nick.lower() == self._current_nick.lower():
+            return
+        text = msg.text
+        prefix = self.config.core.command_prefix
 
-            # Ignore our own echoed messages (echo-message cap)
-            if msg.nick.lower() == self._current_nick.lower():
-                return
+        parts = text[len(prefix) :].split() if text.startswith(prefix) else []
 
-            # Check for command prefix
-            if text.startswith(core.command_prefix):
-                parts = text[len(core.command_prefix) :].split()
-                if not parts:
-                    return
-                cmd_name = parts[0].lower()
-                args = parts[1:]
+        def runs_here(handler: Any) -> bool:
+            if not allowed(handler.plugin_name):
+                return False
+            if not handler.channels:
+                return True
+            return base.channel is not None and base.channel.lower() in {
+                c.lower() for c in handler.channels
+            }
 
-                for command_handler in registry.commands.get(cmd_name, []):
-                    trigger = await self._build_trigger(msg, args=args, match=None)
-                    if trigger is None:
-                        continue
-                    # Check privilege
-                    if command_handler.privilege and not await self._check_privilege(
-                        trigger, command_handler.privilege
-                    ):
+        handlers = []
+        if parts:
+            handlers = [h for h in registry.commands.get(parts[0].lower(), []) if runs_here(h)]
+        if handlers and not await self._within_command_limits(base, handlers[0].command, handlers):
+            handlers = []
+        if handlers:
+            cmd_name = parts[0].lower()
+            args = parts[1:]
+            for command_handler in handlers:
+                trigger = replace(base, args=args)
+                if command_handler.privilege:
+                    if trigger.account is None:
+                        # No account from tags/state: ask the server before deciding
+                        trigger = await self._build_trigger(
+                            msg, args=args, match=None, resolve_account=True
+                        )
+                    if not await self._check_privilege(trigger, command_handler.privilege):
                         await self.notice(trigger.nick, "Permission denied.")
                         continue
-                    asyncio.create_task(
-                        self._run_plugin_handler(command_handler.func, msg, trigger=trigger),
-                        name=f"cmd-{command_handler.plugin_name}-{cmd_name}",
-                    )
+                asyncio.create_task(
+                    self._run_plugin_handler(command_handler.func, msg, trigger=trigger),
+                    name=f"cmd-{command_handler.plugin_name}-{cmd_name}",
+                )
 
-            # Rule matching
-            for rule_handler in registry.rules:
-                m = rule_handler.pattern.search(text)
-                if m:
-                    trigger = await self._build_trigger(msg, args=[], match=m)
-                    if trigger:
-                        asyncio.create_task(
-                            self._run_plugin_handler(rule_handler.func, msg, trigger=trigger),
-                            name=f"rule-{rule_handler.plugin_name}",
-                        )
+        # Rule matching
+        for rule_handler in registry.rules:
+            if not allowed(rule_handler.plugin_name):
+                continue
+            m = rule_handler.pattern.search(text)
+            if m:
+                asyncio.create_task(
+                    self._run_plugin_handler(
+                        rule_handler.func, msg, trigger=replace(base, match=m)
+                    ),
+                    name=f"rule-{rule_handler.plugin_name}",
+                )
+
+    async def _within_command_limits(self, trigger: Any, command: str, handlers: list) -> bool:
+        """Per-user command rate limit and per-command cooldowns; owners/admins are exempt.
+
+        Over the limit, the user gets one notice per window and is otherwise ignored.
+        """
+        if trigger.owner or trigger.admin:
+            return True
+        now = self._monotonic()
+        who = f"{trigger.user}@{trigger.host}".lower() if trigger.host else trigger.nick.lower()
+        if len(self._command_times) > 5000:  # forget users who went quiet
+            self._command_times = {
+                k: v for k, v in self._command_times.items() if v[-1:] and now - v[-1] < 3600
+            }
+            self._cooldowns = {k: t for k, t in self._cooldowns.items() if t > now}
+
+        core = self.config.core
+        if core.command_rate_limit > 0:
+            recent = [
+                t for t in self._command_times.get(who, []) if now - t < core.command_rate_window
+            ]
+            if len(recent) >= core.command_rate_limit:
+                if now - self._rate_warned.get(who, -1e9) >= core.command_rate_window:
+                    self._rate_warned[who] = now
+                    await self.notice(
+                        trigger.nick, "Slow down: too many commands. Try again shortly."
+                    )
+                return False
+            self._command_times[who] = [*recent, now]
+
+        cooldown = max((h.cooldown for h in handlers), default=0.0)
+        if cooldown > 0:
+            ready_at = self._cooldowns.get((command, who), 0.0)
+            if now < ready_at:
+                await self.notice(
+                    trigger.nick, f"!{command} is on cooldown for {ready_at - now:.0f}s."
+                )
+                return False
+            self._cooldowns[(command, who)] = now + cooldown
+        return True
+
+    async def load_plugin_channel_states(self) -> None:
+        """Load which plugins are switched off in which channels."""
+        from pybot.core.plugin_state import get_channel_disabled
+
+        try:
+            self.disabled_plugin_channels = await get_channel_disabled()
+        except Exception as exc:
+            logger.debug(f"Could not load per-channel plugin states: {exc}")
+
+    async def set_plugin_enabled_in_channel(self, plugin: str, channel: str, enabled: bool) -> None:
+        from pybot.core.plugin_state import set_channel_enabled
+
+        await set_channel_enabled(plugin, channel, enabled)
+        key = (plugin, channel.lower())
+        if enabled:
+            self.disabled_plugin_channels.discard(key)
+        else:
+            self.disabled_plugin_channels.add(key)
+
+    async def _is_ignored(self, trigger: Any) -> bool:
+        if trigger.owner or not (trigger.user or trigger.host):
+            return False  # owners are never ignored; server messages have no user@host
+        from pybot.core.database import get_session
+        from pybot.core.permissions import is_ignored
+
+        try:
+            async with get_session() as session:
+                return await is_ignored(session, trigger.hostmask, trigger.account)
+        except Exception as exc:
+            logger.debug(f"Ignore check failed: {exc}")
+            return False
 
     async def _run_plugin_handler(
         self,
         func: Callable[..., Any],
         msg: IRCMessage,
-        trigger: Any | None = None,
+        trigger: Any,
     ) -> None:
         started = self._monotonic()
         try:
-            if trigger is not None:
-                await func(self, trigger)
-            else:
-                # Event handler — build trigger for it too
-                t = await self._build_trigger(msg, args=[], match=None)
-                if t:
-                    await func(self, t)
+            await func(self, trigger)
         except Exception as exc:
             logger.exception(f"Plugin handler error in {func.__module__}.{func.__name__}: {exc}")
         finally:
@@ -457,7 +604,13 @@ class PyraBot:
         msg: IRCMessage,
         args: list[str],
         match: Any | None,
-    ) -> Any | None:
+        resolve_account: bool = False,
+    ) -> Any:
+        """Build the Trigger for a message.
+
+        The services account comes from the account-tag or tracked channel state;
+        resolve_account=True also asks the server (WHOIS) when neither has it.
+        """
         from pybot.plugin import Trigger
 
         nick = msg.nick
@@ -489,28 +642,24 @@ class PyraBot:
                 if ns:
                     account = ns.account
 
-        # For commands, do a WHOIS account fallback when account-tag/state is missing.
-        if account is None and args:
+        if account is None and resolve_account and nick:
             whois_data = await self.whois(nick)
             whois_account = whois_data.get("account")
             if whois_account:
                 account = whois_account
 
-        # Determine admin/owner status
+        # Determine admin/owner status (one lookup; never from the nick alone)
         from pybot.core.database import get_session
-        from pybot.core.permissions import has_flag
+        from pybot.core.permissions import flags_allow, get_flags
 
-        admin = False
-        owner = False
+        flags: set[str] = set()
         try:
             async with get_session() as session:
-                owner = await has_flag(session, hostmask, "n", account=account)
-                admin = owner or await has_flag(session, hostmask, "a", account=account)
-        except Exception:
-            # DB may not be initialised yet
-            if nick == self.config.core.owner:
-                owner = True
-                admin = True
+                flags = await get_flags(session, hostmask, account=account)
+        except Exception as exc:
+            logger.debug(f"Flag lookup failed for {hostmask}: {exc}")
+        owner = "n" in flags
+        admin = owner or flags_allow(flags, "a")
 
         configured_owner_account = self.config.core.owner_account.strip()
         if (
@@ -569,6 +718,8 @@ class PyraBot:
             "ACCOUNT": [self._handle_account],
             "CHGHOST": [self._handle_chghost],
             "NOTICE": [self._handle_notice],
+            "303": [self._handle_ison],
+            "731": [self._handle_monitor_offline],
         }
 
     async def _handle_welcome(self, msg: IRCMessage) -> None:
@@ -579,6 +730,66 @@ class PyraBot:
         # A reconnect starts a new server session; stale state must be dropped.
         self.channels.clear()
         self._names_buffer.clear()
+
+        # Config autojoin channels are joined by the IRC layer; add the remembered ones
+        await self._join_remembered_channels()
+        await self._start_keepnick()
+
+    async def _join_remembered_channels(self) -> None:
+        from pybot.core.database import get_session, remembered_channels
+
+        configured = {c.split()[0].lower() for c in self.config.channels.autojoin if c.strip()}
+        try:
+            async with get_session() as session:
+                remembered = await remembered_channels(session)
+        except Exception as exc:
+            logger.debug(f"Could not load remembered channels: {exc}")
+            return
+        for name, key in remembered:
+            if name.lower() not in configured:
+                await self.join(name, key)
+
+    # ------------------------------------------------------------------
+    # Keepnick: get the configured nick back when it frees up (Eggdrop keepnick)
+    # ------------------------------------------------------------------
+
+    def _wants_nick(self) -> bool:
+        wanted = self.config.core.nick
+        return self.config.core.keepnick and self._current_nick.lower() != wanted.lower()
+
+    async def _start_keepnick(self) -> None:
+        if self._keepnick_task is not None:
+            self._keepnick_task.cancel()
+            self._keepnick_task = None
+        if not self._wants_nick():
+            return
+        logger.info(f"Using {self._current_nick}; will take {self.config.core.nick} back when free")
+        if self.irc.isupport.get("MONITOR"):
+            # The server tells us (731) when the nick goes offline
+            await self.irc.send(f"MONITOR + {self.config.core.nick}")
+        else:
+            self._keepnick_task = asyncio.create_task(self._keepnick_loop(), name="keepnick")
+
+    async def _keepnick_loop(self) -> None:
+        while self._wants_nick():
+            await self.irc.send(f"ISON {self.config.core.nick}")
+            await asyncio.sleep(KEEPNICK_INTERVAL)
+
+    async def _try_wanted_nick(self) -> None:
+        if self._wants_nick():
+            await self.irc.nick(self.config.core.nick)
+
+    async def _handle_ison(self, msg: IRCMessage) -> None:
+        """303 RPL_ISON — the nick is free if the server didn't list it."""
+        online = {n.lower() for n in msg.text.split()}
+        if self.config.core.nick.lower() not in online:
+            await self._try_wanted_nick()
+
+    async def _handle_monitor_offline(self, msg: IRCMessage) -> None:
+        """731 RPL_MONOFFLINE — a monitored nick went offline."""
+        offline = {n.split("!", 1)[0].lower() for n in msg.text.split(",")}
+        if self.config.core.nick.lower() in offline:
+            await self._try_wanted_nick()
 
     async def _handle_notice(self, msg: IRCMessage) -> None:
         """Route NOTICE events to the services interface for service replies."""
@@ -601,6 +812,7 @@ class PyraBot:
             self.channels[channel.lower()] = ChannelState(name=channel)
             logger.info(f"Joined {channel}")
             await self.irc.send(f"WHO {channel}")
+            await self.irc.send(f"MODE {channel}")  # current modes (324), e.g. for chanmode/+l
         else:
             ch = self.channels.get(channel.lower())
             if ch:
@@ -620,6 +832,8 @@ class PyraBot:
         nick = msg.nick
         if nick.lower() == self._current_nick.lower():
             return
+        if nick.lower() == self.config.core.nick.lower():
+            await self._try_wanted_nick()  # whoever had our nick just quit
         for ch in self.channels.values():
             ch.remove_nick(nick)
 
@@ -631,6 +845,12 @@ class PyraBot:
         if old_nick.lower() == self._current_nick.lower():
             self._current_nick = new_nick
             logger.info(f"Nick changed to {new_nick}")
+            if new_nick.lower() == self.config.core.nick.lower() and self.irc.isupport.get(
+                "MONITOR"
+            ):
+                await self.irc.send(f"MONITOR - {new_nick}")
+        elif old_nick.lower() == self.config.core.nick.lower():
+            await self._try_wanted_nick()  # whoever had our nick just changed away
         for ch in self.channels.values():
             ch.rename_nick(old_nick, new_nick)
 
@@ -644,9 +864,9 @@ class PyraBot:
                     await self.services.chanserv_invite(channel, self._current_nick)
                 if self.config.services.channel_guard_reop:
                     await self.services.chanserv_op(channel, self._current_nick)
-            # Auto-rejoin if configured
-            await asyncio.sleep(2)
-            await self.join(channel)
+            if self.config.channels.rejoin_on_kick:
+                await asyncio.sleep(2)
+                await self.join(channel)
         else:
             ch = self.channels.get(channel.lower())
             if ch:
@@ -659,14 +879,21 @@ class PyraBot:
         channel = msg.params[2]
         nicks_str = msg.params[-1]
         buf = self._names_buffer.setdefault(channel.lower(), [])
-
-        prefix_chars = self.irc.nick_prefix_chars or "@+"
         for entry in nicks_str.split():
-            # Strip mode prefixes
-            while entry and entry[0] in prefix_chars:
-                entry = entry[1:]
-            if entry:
-                buf.append(entry)
+            nick, modes = self._split_prefixes(entry)
+            if nick:
+                buf.append((nick.split("!", 1)[0], modes))  # userhost-in-names: nick!user@host
+
+    def _split_prefixes(self, entry: str) -> tuple[str, set[str]]:
+        """'@+nick' -> ('nick', {'o', 'v'}) using the server's PREFIX mapping."""
+        prefix_to_mode = self.irc.prefix_to_mode or {"@": "o", "+": "v"}
+        prefix_chars = set(self.irc.nick_prefix_chars or "@+") | set(prefix_to_mode)
+        modes: set[str] = set()
+        while entry and entry[0] in prefix_chars:
+            if entry[0] in prefix_to_mode:
+                modes.add(prefix_to_mode[entry[0]])
+            entry = entry[1:]
+        return entry, modes
 
     async def _handle_end_of_names(self, msg: IRCMessage) -> None:
         """366 RPL_ENDOFNAMES — finalise nick list."""
@@ -676,9 +903,9 @@ class PyraBot:
         buf = self._names_buffer.pop(channel.lower(), [])
         ch = self.channels.get(channel.lower())
         if ch:
-            for nick in buf:
-                if nick.lower() not in ch.nicks:
-                    ch.add_nick(nick)
+            for nick, modes in buf:
+                ns = ch.get_nick(nick) or ch.add_nick(nick)
+                ns.modes = set(modes)
 
     async def _handle_topic(self, msg: IRCMessage) -> None:
         """332 RPL_TOPIC."""
@@ -756,6 +983,8 @@ class PyraBot:
                     channel.bans.add(arg)
                 else:
                     channel.bans.discard(arg)
+            if char == "l":
+                channel.limit = int(arg) if setting and arg and arg.isdigit() else None
 
             if setting:
                 mode_flags.add(char)
@@ -794,6 +1023,10 @@ class PyraBot:
             ns = ch.add_nick(nick)
         ns.user = user
         ns.host = host
+        # Status field, e.g. "H@+" or "G*@": here/gone, optional ircop '*', then prefixes
+        status = msg.params[6].lstrip("HG").lstrip("*")
+        _, modes = self._split_prefixes(status)
+        ns.modes = modes
 
     async def _handle_ban_list(self, msg: IRCMessage) -> None:
         """367 RPL_BANLIST — include listed ban mask in channel state."""
@@ -854,12 +1087,23 @@ class PyraBot:
 
         await init_db(self.config.database.url)
         await self._bootstrap_owner_account()
+        await self.load_plugin_channel_states()
 
         # Start scheduler
         from pybot.core.scheduler import Scheduler
 
         self.scheduler = Scheduler(self)
         await self.scheduler.start()
+
+        # Message log retention: once now, then every 6 hours (listed by !jobs)
+        from pybot.plugin import IntervalHandler
+
+        await self.prune_message_log()
+        self.scheduler.add_interval_handler(
+            IntervalHandler(
+                seconds=6 * 3600, cron=None, func=self.prune_message_log, plugin_name="core"
+            )
+        )
 
         # Load plugins
         from pathlib import Path
@@ -885,68 +1129,116 @@ class PyraBot:
         if self.config.web.enabled:
             asyncio.create_task(self._run_web(), name="web")
 
-        # Signal handlers
-        loop = asyncio.get_event_loop()
-        loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(self._shutdown()))
-        if hasattr(signal, "SIGHUP"):
-            loop.add_signal_handler(
-                signal.SIGHUP,
-                lambda: asyncio.create_task(self._reload_plugins()),
-            )
+        # Signal handlers (asyncio has none on Windows; Ctrl+C still stops the bot there)
+        loop = asyncio.get_running_loop()
+        try:
+            loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(self._shutdown()))
+            if hasattr(signal, "SIGHUP"):
+                loop.add_signal_handler(
+                    signal.SIGHUP,
+                    lambda: asyncio.create_task(self._reload_plugins()),
+                )
+        except NotImplementedError:
+            logger.debug("Signal handlers are not supported on this platform")
 
         # Connect to IRC
         await self.irc.run()
 
+    async def prune_message_log(self, _bot: Any = None) -> int:
+        """Delete message log entries older than database.log_retention_days (0 = keep all)."""
+        from pybot.core.database import get_session, prune_logs
+
+        days = self.config.database.log_retention_days
+        if days <= 0:
+            return 0
+        try:
+            async with get_session() as session:
+                removed = await prune_logs(session, days)
+        except Exception as exc:
+            logger.warning(f"Message log pruning failed: {exc}")
+            return 0
+        if removed:
+            logger.info(f"Pruned {removed} message log entries older than {days} days")
+        return removed
+
     async def _bootstrap_owner_account(self) -> None:
-        """Ensure an owner account exists for partyline/web auth in first-run setups."""
-        owner_nick = self.config.core.owner.strip()
+        """Ensure the owner record exists and matches config (core.owner*, partyline.password).
+
+        On IRC the owner is recognised by core.owner_account (services account) or
+        core.owner_hostmask, never by nick alone: "nick!*@*" lets anyone who takes the
+        nick act as owner, so such masks are refused and replaced on existing records.
+        """
+        core = self.config.core
+        owner_nick = core.owner.strip()
+        owner_account = core.owner_account.strip() or None
+        owner_hostmask = core.owner_hostmask.strip()
         partyline_password = self.config.partyline.password.get_secret_value().strip()
 
         if not owner_nick:
             logger.warning("core.owner is empty; cannot bootstrap owner login for web/partyline")
             return
-        if not partyline_password:
-            logger.warning(
-                "partyline.password is empty; set it in config "
-                "to enable initial web/partyline login"
-            )
-            return
 
         from sqlalchemy import select
 
         from pybot.core.database import User, get_session
-        from pybot.core.permissions import add_owner_bootstrap
+        from pybot.core.permissions import add_owner_bootstrap, is_nick_only_mask
         from pybot.web.auth import hash_password, verify_password
+
+        if owner_hostmask and is_nick_only_mask(owner_hostmask):
+            logger.error(
+                f"core.owner_hostmask '{owner_hostmask}' only pins the nick, so anyone could "
+                "use it; ignoring it. Use nick!user@host or set core.owner_account."
+            )
+            owner_hostmask = ""
 
         async with get_session() as session:
             result = await session.execute(select(User).where(User.nick == owner_nick))
             user = result.scalar_one_or_none()
 
             if user is None:
-                # Bootstrap a safe default owner hostmask for admin UI + partyline login.
                 await add_owner_bootstrap(
                     session,
                     owner_nick,
-                    f"{owner_nick}!*@*",
-                    hash_password(partyline_password),
+                    owner_hostmask,
+                    hash_password(partyline_password) if partyline_password else "",
+                    account=owner_account,
                 )
-                logger.info(f"Bootstrapped owner login for '{owner_nick}'")
-                return
+                logger.info(f"Bootstrapped owner record for '{owner_nick}'")
+                if not partyline_password:
+                    logger.warning(
+                        "partyline.password is empty; set it to enable the owner's "
+                        "web/partyline login"
+                    )
+            else:
+                if "n" not in (user.global_flags or ""):
+                    user.global_flags = "".join(sorted(set((user.global_flags or "") + "n")))
+                if owner_hostmask and user.hostmask != owner_hostmask:
+                    user.hostmask = owner_hostmask
+                elif is_nick_only_mask(user.hostmask or ""):
+                    if user.hostmask:
+                        logger.warning(
+                            f"Owner hostmask '{user.hostmask}' matched anyone using the nick "
+                            "and has been cleared. Set core.owner_account or "
+                            "core.owner_hostmask to use owner commands on IRC."
+                        )
+                    user.hostmask = ""
+                if owner_account and user.account != owner_account:
+                    user.account = owner_account
+                if partyline_password and not (
+                    user.password_hash and verify_password(partyline_password, user.password_hash)
+                ):
+                    # Config is the source of truth for the owner's bootstrap password
+                    user.password_hash = hash_password(partyline_password)
+                user_hostmask, user_account = user.hostmask, user.account
 
-            updated = False
-            if "n" not in (user.global_flags or ""):
-                user.global_flags = "".join(sorted(set((user.global_flags or "") + "n")))
-                updated = True
-            if not user.password_hash:
-                user.password_hash = hash_password(partyline_password)
-                updated = True
-            elif not verify_password(partyline_password, user.password_hash):
-                # Keep config as source-of-truth for first-run/admin bootstrap credentials.
-                user.password_hash = hash_password(partyline_password)
-                updated = True
-
-            if updated:
-                logger.info(f"Updated owner account bootstrap data for '{owner_nick}'")
+        if user is None:
+            user_hostmask, user_account = owner_hostmask, owner_account
+        if not user_hostmask and not user_account:
+            logger.warning(
+                f"Owner '{owner_nick}' has no IRC identity: set core.owner_account (recommended) "
+                "or core.owner_hostmask to use owner commands on IRC. Web and partyline "
+                "logins still work."
+            )
 
     async def _run_web(self) -> None:
         import uvicorn
@@ -967,14 +1259,15 @@ class PyraBot:
         except Exception as exc:
             logger.error(f"Web interface failed to start: {exc}")
 
-    async def _shutdown(self) -> None:
+    async def _shutdown(self, reason: str = "Shutting down") -> None:
         logger.info("Shutting down...")
-        await self.quit("Shutting down")
+        if self._keepnick_task is not None:
+            self._keepnick_task.cancel()
         if self.scheduler:
             await self.scheduler.stop()
         if self.partyline:
             await self.partyline.stop()
-        await self.irc.stop()
+        await self.irc.stop(reason)  # sends QUIT itself
 
     async def _reload_plugins(self) -> None:
         logger.info("Reloading plugins (SIGHUP)")

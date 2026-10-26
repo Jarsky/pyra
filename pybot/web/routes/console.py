@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 from pybot.web.app import templates
-from pybot.web.auth import decode_token, get_current_user
+from pybot.web.auth import authenticate_token, get_current_user
 
 router = APIRouter()
 
@@ -30,17 +31,24 @@ async def console_ws(websocket: WebSocket) -> None:
     """WebSocket endpoint — streams IRC events and accepts commands."""
     bot = websocket.app.state.bot
 
-    # Authenticate via cookie
-    token = websocket.cookies.get("access_token")
-    if not token:
-        await websocket.close(code=4001)
+    # Only same-origin pages may open the console (blocks cross-site WebSocket hijacking)
+    origin = websocket.headers.get("origin")
+    hosts = {
+        h.strip().lower()
+        for h in (websocket.headers.get("host", ""), websocket.headers.get("x-forwarded-host", ""))
+        if h.strip()
+    }
+    if origin and urlsplit(origin).netloc.lower() not in hosts:
+        await websocket.close(code=4003)
         return
 
-    secret = bot.config.web.secret_key.get_secret_value()
-    username = decode_token(token, secret)
-    if not username:
+    # Authenticate via cookie (also re-checks the user's flags)
+    session = await authenticate_token(bot, websocket.cookies.get("access_token"))
+    if session is None:
         await websocket.close(code=4001)
         return
+    username, flags = session
+    is_owner = "n" in flags
 
     await websocket.accept()
 
@@ -74,7 +82,7 @@ async def console_ws(websocket: WebSocket) -> None:
                 # Echo back
                 await queue.put(f"[{username}] {line}")
                 # Parse and execute basic commands
-                await _handle_ws_command(bot, websocket, username, line, queue)
+                await _handle_ws_command(bot, websocket, username, is_owner, line, queue)
 
         await asyncio.gather(sender(), receiver())
 
@@ -92,6 +100,7 @@ async def _handle_ws_command(
     bot: object,
     websocket: WebSocket,
     username: str,
+    is_owner: bool,
     line: str,
     queue: asyncio.Queue,
 ) -> None:
@@ -109,9 +118,10 @@ async def _handle_ws_command(
         actor=username,
         line=line,
         send=lambda msg: queue.put(f">>> {msg.rstrip()}"),
-        is_owner=username.lower() == bot.config.core.owner.lower(),
+        is_owner=is_owner,
         admin_count=admin_count,
         channel_names=lambda: sorted(ch.name for ch in bot.channels.values()),
         close=websocket.close,
         line_ending="",
+        source="web",
     )

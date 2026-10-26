@@ -22,6 +22,11 @@ __plugin_meta__ = {
     "url": "https://github.com/Jarsky/pyra",
 }
 
+__plugin_config__ = {
+    "max_title_length": {"type": "int", "default": 200, "min": 20, "max": 400},
+    "ignore_domains": {"type": "list", "help": "Domains whose links are not fetched"},
+}
+
 import re
 from collections import defaultdict
 from urllib.parse import urlparse

@@ -98,13 +98,8 @@ async def _deliver_tells(bot: object, nick: str, channel: str) -> None:
 
         now = datetime.now(tz=timezone.utc)
         for tell in tells:
-
-            try:
-                from pybot.plugins.seen import _format_age as fmt_age
-            except ImportError:
-                fmt_age = lambda seconds: f"{seconds}s"  # noqa: E731
-
-            age = fmt_age(int((now - tell.created_at.replace(tzinfo=timezone.utc)).total_seconds()))
+            created = tell.created_at.replace(tzinfo=timezone.utc)
+            age = plugin.format_age(int((now - created).total_seconds()))
             await bot.say(  # type: ignore[attr-defined]
                 channel,
                 f"{nick}: [{tell.from_nick} {age} ago]: {tell.message}",

@@ -66,6 +66,8 @@
       <div style="margin-top:0.2rem;font-size:0.78rem;color:var(--muted-color);">{{ p.meta.description }}</div>
       {% endif %}
       <div style="margin-top:0.35rem"><span class="plugin-status {{ 'loaded' if p.loaded else 'unloaded' }}">{{ 'Loaded' if p.loaded else 'Unloaded' }}</span></div>
+      {% if p.error %}<div style="margin-top:0.35rem"><small style="color:#c0392b">Last load failed: {{ p.error }}</small></div>{% endif %}
+      {% for w in p.warnings %}<div style="margin-top:0.2rem"><small style="color:#b9770e">Warning: {{ w }}</small></div>{% endfor %}
     </td>
     <td class="plugin-commands">
       {% if p.commands %}

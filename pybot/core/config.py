@@ -25,11 +25,16 @@ class ConfigError(Exception):
 class CoreConfig(BaseModel):
     nick: str = "Pyra"
     altnicks: list[str] = Field(default_factory=lambda: ["Pyra_", "Pyra__"])
+    keepnick: bool = True  # take `nick` back when it frees up while on an altnick
     realname: str = "Pyra IRC Bot"
     ident: str = "pyra"
     command_prefix: str = "!"
-    owner: str = ""
-    owner_account: str = ""
+    owner: str = ""  # owner's nick: web/partyline username
+    owner_account: str = ""  # services account that identifies the owner on IRC
+    owner_hostmask: str = ""  # or a nick!user@host mask (not nick!*@*)
+    # Per-user command limit (owners/admins exempt): at most this many commands per window
+    command_rate_limit: int = 5  # 0 = no limit
+    command_rate_window: int = 10  # seconds
     admins: list[str] = Field(default_factory=list)
     log_level: str = "INFO"
     log_file: str = "data/logs/pyra.log"
@@ -98,12 +103,14 @@ class AuthConfig(BaseModel):
 
 class ChannelsConfig(BaseModel):
     autojoin: list[str] = Field(default_factory=list)
+    rejoin_on_kick: bool = True
     channel_config: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class DatabaseConfig(BaseModel):
     url: str = "sqlite+aiosqlite:///data/pyra.db"
     echo: bool = False
+    log_retention_days: int = Field(default=30, ge=0)  # message log kept this long; 0 = forever
 
 
 class FloodConfig(BaseModel):
@@ -253,6 +260,33 @@ def save_config_partial(path: Path, config: BotConfig, updates: dict[str, Any]) 
         raw = config.model_dump(mode="json")
 
     raw = _deep_merge(raw, updates)
+
+    try:
+        new_config = BotConfig.model_validate(raw)
+    except Exception as exc:
+        raise ConfigError(f"Updated configuration is invalid: {exc}") from exc
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.dump(raw, default_flow_style=False), encoding="utf-8")
+    return new_config
+
+
+def save_plugin_vars(
+    path: Path, config: BotConfig, plugin: str, values: dict[str, Any]
+) -> BotConfig:
+    """Replace plugins.vars.<plugin> with exactly these values (removed keys disappear)."""
+    if path.exists():
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    else:
+        raw = config.model_dump(mode="json")
+    plugins = raw.setdefault("plugins", {}) or {}
+    raw["plugins"] = plugins
+    plugin_vars = plugins.setdefault("vars", {}) or {}
+    plugins["vars"] = plugin_vars
+    if values:
+        plugin_vars[plugin] = values
+    else:
+        plugin_vars.pop(plugin, None)
 
     try:
         new_config = BotConfig.model_validate(raw)

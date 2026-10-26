@@ -13,9 +13,11 @@ import yaml
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from pybot.core.config import save_config_partial
+from pybot.core.audit import audit
+from pybot.core.config import save_plugin_vars as write_plugin_vars
+from pybot.core.plugin_schema import form_fields, masked, merge_settings, parse_form, plugin_schema
 from pybot.web.app import templates
-from pybot.web.auth import get_current_user
+from pybot.web.auth import get_current_user, get_web_user_flags
 
 router = APIRouter()
 
@@ -50,15 +52,7 @@ def _resolve_config_path() -> Path:
 
 
 async def _is_owner(bot: Any, username: str) -> bool:
-    from sqlalchemy import select
-
-    from pybot.core.database import User, get_session
-    from pybot.core.permissions import has_flag
-
-    async with get_session() as session:
-        result = await session.execute(select(User).where(User.nick == username))
-        user = result.scalar_one_or_none()
-        return bool(user and await has_flag(session, user.hostmask, "n"))
+    return "n" in await get_web_user_flags(username)
 
 
 def _register_available(loader: Any, name: str, path: Path) -> None:
@@ -90,6 +84,8 @@ async def plugins_list(
         registry = get_registry()
         plugins = []
         loaded = loader.get_loaded_plugins()
+        errors = loader.get_errors()
+        warnings = loader.get_warnings()
         for name, path in sorted(loader.get_available_plugins().items()):
             cmds = []
             if name in loaded:
@@ -104,6 +100,8 @@ async def plugins_list(
                     "path": str(path),
                     "commands": cmds,
                     "loaded": name in loaded,
+                    "error": errors.get(name, ""),
+                    "warnings": warnings.get(name, []),
                     "meta": _plugin_meta(loader, name),
                     "source": _plugin_source(str(path)),
                 }
@@ -142,6 +140,7 @@ async def plugin_detail(
                 "intervals": [],
                 "rules": [],
                 "config_vars": {},
+                "settings_fields": [],
                 "loaded": False,
                 "available": False,
                 "source": "core",
@@ -195,6 +194,8 @@ async def plugin_detail(
         ]
 
     config_vars: dict[str, Any] = bot.config.plugins.vars.get(plugin_name, {})
+    schema = plugin_schema(loader.get_module(plugin_name) if loader else None)
+    settings_fields = form_fields(schema, config_vars)
     vars_yaml = yaml.safe_dump(config_vars, sort_keys=False, default_flow_style=False)
     script_content = Path(plugin_path).read_text(encoding="utf-8") if plugin_path else ""
     script_editable = source == "extra"
@@ -211,12 +212,13 @@ async def plugin_detail(
             "events": events,
             "intervals": intervals,
             "rules": rules,
-            "config_vars": config_vars,
+            "config_vars": masked(config_vars, schema),  # never show secrets
+            "settings_fields": settings_fields,
             "loaded": loaded,
             "available": available,
             "source": source,
             "is_owner": is_owner,
-            "vars_yaml": vars_yaml,
+            "vars_yaml": vars_yaml if is_owner else "",
             "script_content": script_content,
             "script_editable": script_editable,
         },
@@ -269,6 +271,7 @@ async def upload_plugin(
         )
 
     path.write_text(text, encoding="utf-8")
+    await audit(username, "plugin.upload", name, str(path), source="web")
 
     if bot.plugin_loader:
         _register_available(bot.plugin_loader, name, path)
@@ -356,6 +359,7 @@ async def cmd_{name}(bot: object, trigger: Trigger) -> None:
     )
 '''
     path.write_text(skeleton, encoding="utf-8")
+    await audit(username, "plugin.create", name, str(path), source="web")
 
     if bot.plugin_loader:
         _register_available(bot.plugin_loader, name, path)
@@ -403,11 +407,8 @@ async def save_plugin_vars(
 
     config_path = _resolve_config_path()
     try:
-        bot.config = save_config_partial(
-            config_path,
-            bot.config,
-            {"plugins": {"vars": {plugin_name: parsed}}},
-        )
+        bot.config = write_plugin_vars(config_path, bot.config, plugin_name, parsed)
+        await audit(username, "plugin.vars", plugin_name, "YAML editor", source="web")
     except Exception as exc:
         return RedirectResponse(
             url=f"/plugins/{plugin_name}?error={quote_plus(str(exc))}",
@@ -427,6 +428,47 @@ async def save_plugin_vars(
         url=f"/plugins/{plugin_name}?success=Plugin+vars+saved.",
         status_code=303,
     )
+
+
+@router.post("/{plugin_name}/save-settings")
+async def save_plugin_settings(
+    plugin_name: str,
+    request: Request,
+    username: str = Depends(get_current_user),
+) -> RedirectResponse:
+    """Save the typed settings form built from the plugin's __plugin_config__."""
+    bot = request.app.state.bot
+    if not await _is_owner(bot, username):
+        return RedirectResponse(
+            url=f"/plugins/{plugin_name}?error=Owner+flag+required+to+edit+plugin+settings.",
+            status_code=303,
+        )
+    schema = plugin_schema(bot.plugin_loader.get_module(plugin_name) if bot.plugin_loader else None)
+    if not schema:
+        return RedirectResponse(
+            url=f"/plugins/{plugin_name}?error=This+plugin+has+no+settings+form.", status_code=303
+        )
+    form = await request.form()
+    current: dict[str, Any] = dict(bot.config.plugins.vars.get(plugin_name, {}))
+    try:
+        values = merge_settings(current, parse_form(schema, form, current))
+        bot.config = write_plugin_vars(_resolve_config_path(), bot.config, plugin_name, values)
+        changed = sorted(k for k in set(values) | set(current) if values.get(k) != current.get(k))
+        await audit(username, "plugin.settings", plugin_name, ", ".join(changed), source="web")
+    except Exception as exc:
+        return RedirectResponse(
+            url=f"/plugins/{plugin_name}?error={quote_plus(str(exc))}", status_code=303
+        )
+
+    if form.get("reload_after") and bot.plugin_loader.is_loaded(plugin_name):
+        try:
+            await bot.plugin_loader.reload(plugin_name)
+        except Exception as exc:
+            return RedirectResponse(
+                url=f"/plugins/{plugin_name}?error=Saved+but+reload+failed:+{quote_plus(str(exc))}",
+                status_code=303,
+            )
+    return RedirectResponse(url=f"/plugins/{plugin_name}?success=Settings+saved.", status_code=303)
 
 
 @router.post("/{plugin_name}/save-script")
@@ -464,6 +506,7 @@ async def save_plugin_script(
         )
 
     path.write_text(script_content, encoding="utf-8")
+    await audit(username, "plugin.script", plugin_name, str(path), source="web")
     _register_available(bot.plugin_loader, plugin_name, path)
 
     if reload_after and bot.plugin_loader.is_loaded(plugin_name):
@@ -488,6 +531,11 @@ async def reload_plugin(
     username: str = Depends(get_current_user),
 ) -> RedirectResponse:
     bot = request.app.state.bot
+    if not await _is_owner(bot, username):
+        return RedirectResponse(
+            url="/plugins?error=Owner+flag+required+to+reload+plugins.",
+            status_code=303,
+        )
     if bot.plugin_loader:
         try:
             await bot.plugin_loader.reload(plugin_name)
@@ -510,6 +558,11 @@ async def load_plugin(
     username: str = Depends(get_current_user),
 ) -> RedirectResponse:
     bot = request.app.state.bot
+    if not await _is_owner(bot, username):
+        return RedirectResponse(
+            url="/plugins?error=Owner+flag+required+to+load+plugins.",
+            status_code=303,
+        )
     if bot.plugin_loader:
         try:
             available = bot.plugin_loader.get_available_plugins()
@@ -518,7 +571,8 @@ async def load_plugin(
                     url=f"/plugins?error=Plugin+{plugin_name}+not+found.",
                     status_code=303,
                 )
-            await bot.plugin_loader.load(plugin_name, available[plugin_name])
+            await bot.plugin_loader.enable(plugin_name)  # remembered across restarts
+            await audit(username, "plugin.load", plugin_name, source="web")
             return RedirectResponse(
                 url=f"/plugins?success={plugin_name}+loaded+successfully.",
                 status_code=303,
@@ -538,9 +592,15 @@ async def unload_plugin(
     username: str = Depends(get_current_user),
 ) -> RedirectResponse:
     bot = request.app.state.bot
+    if not await _is_owner(bot, username):
+        return RedirectResponse(
+            url="/plugins?error=Owner+flag+required+to+unload+plugins.",
+            status_code=303,
+        )
     if bot.plugin_loader:
         try:
-            await bot.plugin_loader.unload(plugin_name)
+            await bot.plugin_loader.disable(plugin_name)  # remembered across restarts
+            await audit(username, "plugin.unload", plugin_name, source="web")
             return RedirectResponse(
                 url=f"/plugins?success={plugin_name}+unloaded.",
                 status_code=303,

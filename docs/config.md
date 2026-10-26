@@ -10,17 +10,28 @@ Run `pybot-setup` to generate one interactively, or copy `config/config.example.
 ```yaml
 core:
   nick: Pyra               # Primary IRC nick
-  alt_nicks: [Pyra_, Pyra__]  # Fallbacks if nick is taken
+  altnicks: [Pyra_, Pyra__]  # Fallbacks if nick is taken
+  keepnick: true           # On an altnick, take `nick` back as soon as it is free
   ident: pyra              # IRC ident (username)
   realname: "Pyra IRC Bot" # IRC real name
   command_prefix: "!"      # Prefix for commands (e.g. !help)
+  owner: YourNick          # Owner's web/partyline username
+  owner_account: ""        # Owner's services account: how IRC recognises the owner
+  owner_hostmask: ""       # ...or a nick!user@host mask (nick-only masks are refused)
+  command_rate_limit: 5    # commands per user per window (owners/admins exempt; 0 = off)
+  command_rate_window: 10  # seconds
 ```
+
+The owner is never recognised by nick alone. Set `owner_account` (recommended) or
+`owner_hostmask` to use owner commands on IRC.
 
 ---
 
 ## `servers`
 
-List of servers in priority order. The bot uses the highest-priority reachable server.
+List of servers in priority order. The bot connects to the lowest `priority` value first; if
+it can't connect or register, it moves to the next server. After a drop from an established
+session it retries the same server first.
 
 ```yaml
 servers:
@@ -72,7 +83,11 @@ channels:
     - "#general"
     - "#bots"
     - "#staff key123"      # Channel with key
+  rejoin_on_kick: true     # Rejoin 2s after being kicked
 ```
+
+Channels joined with `!join` (or `.join` on the partyline) are remembered and rejoined on
+every connect, in addition to `autojoin`; `!part` forgets them.
 
 ---
 
@@ -86,10 +101,12 @@ database:
   # PostgreSQL
   # url: "postgresql+asyncpg://user:password@localhost:5432/pyra"
 
-  pool_pre_ping: true      # Verify connections before use
-  pool_recycle: 3600       # Recycle connections after 1 hour
   echo: false              # Log all SQL (debug only)
+  log_retention_days: 30   # Message log (web Logs page, !history) kept this long; 0 = forever
 ```
+
+Old messages are deleted at startup and every 6 hours (`core.prune_message_log` in `!jobs`).
+The audit log is kept.
 
 ---
 

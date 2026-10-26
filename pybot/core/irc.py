@@ -3,12 +3,14 @@ IRC protocol handler — async IRC/IRCv3 client using asyncio StreamReader/Strea
 
 Responsibilities:
 - IRC wire protocol parsing (IRCMessage)
-- TCP/SSL connection management with reconnect + exponential backoff
+- TCP/SSL connection management with reconnect + exponential backoff, rotating through
+  the configured servers by priority when one fails
 - IRCv3 capability negotiation
 - SASL authentication (PLAIN, EXTERNAL, SCRAM-SHA-256)
 - Outbound flood protection via asyncio.Queue + token bucket
-- PING/PONG keepalive
-- DCC CHAT initiation
+- Outgoing text is stripped of CR/LF/NUL (no command injection) and long messages are
+  split to fit the 512-byte line limit
+- PING/PONG keepalive and lag detection (reconnects when the server stops answering)
 """
 
 from __future__ import annotations
@@ -24,6 +26,58 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from loguru import logger
+
+from pybot.core.redact import redact_line
+from pybot.core.sasl import ScramError, ScramSha256
+
+MAX_LINE_BYTES = 512  # including CRLF (RFC 1459/2812)
+# Room left for the ":nick!user@host " prefix the server adds when relaying our message
+PREFIX_RESERVE_BYTES = 100
+IDLE_PING_SECONDS = 120.0  # send a PING after this long without any data
+PING_TIMEOUT_SECONDS = 60.0  # ...and reconnect if nothing arrives within this
+SASL_CHUNK = 400  # AUTHENTICATE payloads are split into 400-byte chunks
+
+
+def clean_line(line: str) -> str:
+    """Remove CR, LF and NUL so text can never start a second IRC command."""
+    return line.replace("\r", " ").replace("\n", " ").replace("\0", "")
+
+
+def _utf8_cut(data: bytes, limit: int) -> int:
+    """Largest cut position <= limit that does not split a UTF-8 character."""
+    cut = min(limit, len(data))
+    while 0 < cut < len(data) and (data[cut] & 0xC0) == 0x80:
+        cut -= 1
+    return cut
+
+
+def split_message(text: str, max_bytes: int) -> list[str]:
+    """Split text into lines of at most max_bytes UTF-8 bytes, preferring word breaks.
+
+    Embedded newlines start new messages; empty lines are dropped. A CTCP message
+    (\\x01...\\x01) is never split, only truncated.
+    """
+    max_bytes = max(max_bytes, 16)
+    if text.startswith("\x01") and text.endswith("\x01") and len(text) > 1:
+        body = clean_line(text[1:-1]).encode()
+        cut = _utf8_cut(body, max_bytes - 2)
+        return [f"\x01{body[:cut].decode()}\x01"]
+
+    chunks: list[str] = []
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        data = line.replace("\0", "").encode()
+        while data:
+            if len(data) <= max_bytes:
+                chunks.append(data.decode())
+                break
+            cut = _utf8_cut(data, max_bytes)
+            space = data.rfind(b" ", 0, cut + 1)
+            if space > max_bytes // 2:
+                cut = space
+            chunks.append(data[:cut].decode().rstrip())
+            data = data[cut:].lstrip(b" ")
+    return [c for c in chunks if c]
+
 
 # ---------------------------------------------------------------------------
 # IRCMessage — parsed wire representation
@@ -215,6 +269,7 @@ DESIRED_CAPS = {
     "invite-notify",
     "cap-notify",
 }
+# MONITOR is an ISUPPORT token, not a capability; it is used for keepnick when offered
 
 
 class IRCConnection:
@@ -259,6 +314,15 @@ class IRCConnection:
 
         # SASL
         self._sasl_done = asyncio.Event()
+        self._scram: ScramSha256 | None = None
+        self._sasl_buffer = ""  # incoming AUTHENTICATE chunks
+
+        # Set at 001; the writer holds queued lines until then
+        self._registered_event = asyncio.Event()
+
+        # Server rotation: index into servers sorted by priority
+        self._server_index = 0
+        self._session_registered = False
 
         # WHOIS futures: nick -> Future resolved when 318 arrives
         self._whois_futures: dict[str, asyncio.Future[dict[str, str]]] = {}
@@ -291,6 +355,9 @@ class IRCConnection:
 
         self._caps_available.clear()
         self._caps_acked.clear()
+        self._registered_event.clear()
+        self._scram = None
+        self._sasl_buffer = ""
 
         for fut in self._whois_futures.values():
             if not fut.done():
@@ -304,20 +371,26 @@ class IRCConnection:
     # ------------------------------------------------------------------
 
     async def send_raw(self, line: str) -> None:
-        """Send a raw IRC line, bypassing the flood queue. Use for PING/PONG only."""
+        """Send a raw IRC line, bypassing the flood queue. Use for registration/PING/PONG."""
         if self._writer:
-            self._writer.write(f"{line}\r\n".encode())
+            self._writer.write(f"{clean_line(line)}\r\n".encode())
             await self._writer.drain()
 
     async def send(self, line: str) -> None:
-        """Enqueue a line for flood-protected delivery."""
-        await self._flood_queue.put(line)
+        """Enqueue a line for flood-protected delivery (sent once registered)."""
+        await self._flood_queue.put(clean_line(line))
+
+    async def _send_text(self, command: str, target: str, text: str) -> None:
+        head = f"{command} {clean_line(target)} :"
+        budget = MAX_LINE_BYTES - 2 - PREFIX_RESERVE_BYTES - len(head.encode())
+        for part in split_message(text, budget):
+            await self.send(head + part)
 
     async def privmsg(self, target: str, text: str) -> None:
-        await self.send(f"PRIVMSG {target} :{text}")
+        await self._send_text("PRIVMSG", target, text)
 
     async def notice(self, target: str, text: str) -> None:
-        await self.send(f"NOTICE {target} :{text}")
+        await self._send_text("NOTICE", target, text)
 
     async def join(self, channel: str, key: str = "") -> None:
         if key:
@@ -390,10 +463,17 @@ class IRCConnection:
     # Connection lifecycle
     # ------------------------------------------------------------------
 
+    @property
+    def current_server(self) -> Any:
+        """The server being used (or tried next); servers rotate by priority on failure."""
+        servers = sorted(self._config.servers, key=lambda s: s.priority)
+        return servers[self._server_index % len(servers)]
+
     async def run(self) -> None:
         """Main connection loop with automatic reconnect."""
         self._running = True
         while self._running:
+            self._session_registered = False
             try:
                 await self._connect_and_run()
             except asyncio.CancelledError:
@@ -404,21 +484,28 @@ class IRCConnection:
             if not self._running:
                 break
 
+            # A server we never got registered on is skipped for the next one; after a drop
+            # from an established session the same server is retried first.
+            if not self._session_registered and len(self._config.servers) > 1:
+                self._server_index += 1
+                logger.info(f"Next server: {self.current_server.host}:{self.current_server.port}")
+
             logger.info(f"Reconnecting in {self._reconnect_delay:.0f}s...")
             await asyncio.sleep(self._reconnect_delay)
             self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
 
     def _format_connection_error(self, exc: Exception) -> str:
         """Return a concise, actionable message for expected connection failures."""
+        server = self.current_server
         if isinstance(exc, socket.gaierror):
             return (
-                f"IRC connection error: cannot resolve host '{self._config.primary_server.host}'. "
+                f"IRC connection error: cannot resolve host '{server.host}'. "
                 "Check server.host DNS/name in config."
             )
         if isinstance(exc, ConnectionRefusedError):
             return (
                 f"IRC connection error: connection refused by "
-                f"{self._config.primary_server.host}:{self._config.primary_server.port}. "
+                f"{server.host}:{server.port}. "
                 "Check port/firewall/SSL settings."
             )
         if isinstance(exc, ssl.SSLError):
@@ -428,20 +515,22 @@ class IRCConnection:
             )
         return f"IRC connection error: {type(exc).__name__}: {exc}"
 
-    async def stop(self) -> None:
+    async def stop(self, message: str = "Shutting down") -> None:
         self._running = False
         for task in self._tasks:
             task.cancel()
         if self._writer:
             try:
-                await self.quit()
+                if self._registered:
+                    # Directly, not via the queue: the writer task has just been cancelled
+                    await self.send_raw(f"QUIT :{message}")
                 self._writer.close()
                 await self._writer.wait_closed()
             except Exception as e:
                 logger.warning(f"Error during disconnect: {e}")
 
     async def _connect_and_run(self) -> None:
-        server = self._config.primary_server
+        server = self.current_server
         logger.info(f"Connecting to {server.host}:{server.port} (SSL={server.ssl})")
 
         self._reset_runtime_session_state()
@@ -497,7 +586,7 @@ class IRCConnection:
 
     async def _begin_registration(self) -> None:
         """Send CAP LS, PASS, NICK, USER to begin registration."""
-        server = self._config.primary_server
+        server = self.current_server
         core = self._config.core
 
         self._cap_negotiating = True
@@ -515,15 +604,31 @@ class IRCConnection:
 
     async def _reader_loop(self) -> None:
         assert self._reader is not None
+        prefix = self._config.core.command_prefix
+        awaiting_reply = False
         try:
             while True:
-                data = await self._reader.readline()
+                # A silent connection gets a PING; no answer to that means it is dead
+                timeout = PING_TIMEOUT_SECONDS if awaiting_reply else IDLE_PING_SECONDS
+                try:
+                    data = await asyncio.wait_for(self._reader.readline(), timeout=timeout)
+                except asyncio.TimeoutError:
+                    if awaiting_reply:
+                        logger.warning(
+                            f"No data from the server for {IDLE_PING_SECONDS + timeout:.0f}s; "
+                            "reconnecting"
+                        )
+                        break
+                    awaiting_reply = True
+                    await self.send_raw(f"PING :{self.current_server.host}")
+                    continue
+                awaiting_reply = False
                 if not data:
                     logger.warning("IRC server closed connection")
                     break
                 line = data.decode("utf-8", errors="replace").rstrip("\r\n")
                 if line:
-                    logger.debug(f"<< {line}")
+                    logger.debug(f"<< {redact_line(line, prefix)}")
                     msg = IRCMessage.parse(line)
                     await self._handle_message(msg)
         except asyncio.CancelledError:
@@ -542,6 +647,10 @@ class IRCConnection:
 
     async def _writer_loop(self) -> None:
         assert self._writer is not None
+        prefix = self._config.core.command_prefix
+        # Queued lines (including ones left from a dropped session) wait for registration;
+        # registration itself goes through send_raw.
+        await self._registered_event.wait()
         last_refill = asyncio.get_event_loop().time()
         try:
             while True:
@@ -558,7 +667,7 @@ class IRCConnection:
                     try:
                         line = self._flood_queue.get_nowait()
                         self._flood_tokens -= 1.0
-                        logger.debug(f">> {line}")
+                        logger.debug(f">> {redact_line(line, prefix)}")
                         self._writer.write(f"{line}\r\n".encode())
                         await self._writer.drain()
                     except asyncio.QueueEmpty:
@@ -601,6 +710,8 @@ class IRCConnection:
     async def _on_001(self, msg: IRCMessage) -> None:
         """Welcome — registration complete."""
         self._registered = True
+        self._session_registered = True
+        self._registered_event.set()
         self._reconnect_delay = 2.0  # reset backoff on successful connect
         logger.info(f"Registered on {msg.prefix} as {msg.params[0] if msg.params else '?'}")
 
@@ -704,7 +815,11 @@ class IRCConnection:
         return False
 
     async def _on_433(self, msg: IRCMessage) -> None:
-        """Nick already in use — try next altnick."""
+        """Nick already in use — during registration, try the next altnick."""
+        if self._registered:
+            # A later NICK attempt (e.g. keepnick) failed; keep the nick we have
+            logger.debug(f"Nick change refused: {msg.text}")
+            return
         core = self._config.core
         current = msg.params[1] if len(msg.params) > 1 else core.nick
 
@@ -823,30 +938,52 @@ class IRCConnection:
             return bool(auth.sasl_password.get_secret_value())
         return False
 
-    async def _on_authenticate(self, msg: IRCMessage) -> None:
-        """Server sent AUTHENTICATE prompt."""
-        if msg.text != "+":
+    async def _send_authenticate(self, data: str) -> None:
+        """Send a SASL response, base64-encoded and split into 400-byte chunks."""
+        payload = base64.b64encode(data.encode()).decode()
+        if not payload:
+            await self.send_raw("AUTHENTICATE +")
             return
+        for i in range(0, len(payload), SASL_CHUNK):
+            await self.send_raw(f"AUTHENTICATE {payload[i : i + SASL_CHUNK]}")
+        if len(payload) % SASL_CHUNK == 0:
+            await self.send_raw("AUTHENTICATE +")  # tells the server the last chunk was full
 
+    async def _on_authenticate(self, msg: IRCMessage) -> None:
+        """Server sent an AUTHENTICATE challenge ('+' = empty)."""
         auth = self._config.auth
         mechanism = auth.sasl_mechanism
+        user = auth.sasl_username or self._config.core.nick
+        password = auth.sasl_password.get_secret_value()
+
+        # Reassemble chunked challenges: a full 400-byte chunk means more follows
+        chunk = msg.text
+        if chunk != "+":
+            self._sasl_buffer += chunk
+            if len(chunk) == SASL_CHUNK:
+                return
+        challenge_b64, self._sasl_buffer = self._sasl_buffer, ""
 
         if mechanism == "PLAIN":
-            user = auth.sasl_username or self._config.core.nick
-            password = auth.sasl_password.get_secret_value()
-            payload = base64.b64encode(f"\x00{user}\x00{password}".encode()).decode()
-            await self.send_raw(f"AUTHENTICATE {payload}")
-
+            await self._send_authenticate(f"\x00{user}\x00{password}")
         elif mechanism == "EXTERNAL":
             await self.send_raw("AUTHENTICATE +")
-
         elif mechanism == "SCRAM-SHA-256":
-            # Phase 1 of SCRAM exchange
-            user = auth.sasl_username or self._config.core.nick
-            self._scram_nonce = base64.b64encode(os.urandom(18)).decode()
-            client_first = f"n,,n={user},r={self._scram_nonce}"
-            payload = base64.b64encode(client_first.encode()).decode()
-            await self.send_raw(f"AUTHENTICATE {payload}")
+            try:
+                if self._scram is None:
+                    self._scram = ScramSha256(user, password)
+                    await self._send_authenticate(self._scram.client_first())
+                    return
+                challenge = base64.b64decode(challenge_b64).decode()
+                if challenge.startswith("v=") or challenge.startswith("e="):
+                    self._scram.verify_server_final(challenge)
+                    await self.send_raw("AUTHENTICATE +")
+                else:
+                    await self._send_authenticate(self._scram.client_final(challenge))
+            except (ScramError, ValueError) as exc:
+                logger.error(f"SASL SCRAM-SHA-256 aborted: {exc}")
+                self._scram = None
+                await self.send_raw("AUTHENTICATE *")
 
     async def _on_900(self, msg: IRCMessage) -> None:
         """RPL_LOGGEDIN — SASL success, account logged in."""

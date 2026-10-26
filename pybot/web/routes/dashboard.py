@@ -65,7 +65,7 @@ async def dashboard(
             "request": request,
             "username": username,
             "nick": bot.nick,
-            "server": f"{bot.config.primary_server.host}:{bot.config.primary_server.port}",
+            "server": f"{bot.irc.current_server.host}:{bot.irc.current_server.port}",
             "uptime": uptime_str,
             "channels": channels,
             "connected": bot.irc.connected,

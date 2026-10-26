@@ -82,7 +82,7 @@ class PartylineServer:
         if not self._sessions:
             return
 
-        line = _format_irc_event(msg)
+        line = _format_irc_event(msg, text=self._bot._sanitize_log_message(msg) or "")
         if line:
             for session in list(self._sessions):
                 if session.authenticated:
@@ -120,6 +120,7 @@ class PartylineSession:
         self._bot = bot
         self._server = server
         self.authenticated = False
+        self.owner = False  # set at login from the user's flags
         self.nick: str | None = None
         self._last_activity = asyncio.get_event_loop().time()
 
@@ -218,28 +219,44 @@ class PartylineSession:
         return False
 
     async def _verify_credentials(self, username: str, password: str) -> bool:
+        """Owner (config password) or a user with a password and the a/n flag."""
+        import secrets
+
         from sqlalchemy import select
 
         from pybot.core.database import User, get_session
+        from pybot.core.permissions import get_user_flags
         from pybot.web.auth import verify_password
 
         owner_nick = self._bot.config.core.owner.strip()
         owner_password = self._bot.config.partyline.password.get_secret_value().strip()
-        if username == owner_nick and owner_password and password == owner_password:
+        if (
+            owner_nick
+            and username == owner_nick
+            and owner_password
+            and secrets.compare_digest(password.encode(), owner_password.encode())
+        ):
+            self.owner = True
             return True
 
         try:
             async with get_session() as session:
                 result = await session.execute(select(User).where(User.nick == username))
-                user = result.scalar_one_or_none()
-
-            if not user or not user.password_hash:
-                return False
-
-            return verify_password(password, user.password_hash)
+                user = result.scalars().first()
+                if not user or not user.password_hash:
+                    return False
+                if not verify_password(password, user.password_hash):
+                    return False
+                flags = await get_user_flags(session, user)
         except Exception as exc:
             logger.error(f"Partyline auth error: {exc}")
             return False
+
+        if "n" not in flags and "a" not in flags:
+            logger.warning(f"Partyline: '{username}' has no admin flag; login refused")
+            return False
+        self.owner = "n" in flags
+        return True
 
     # ------------------------------------------------------------------
     # Command handling
@@ -265,7 +282,7 @@ class PartylineSession:
         )
 
     def _is_owner(self) -> bool:
-        return bool(self.nick and self.nick.lower() == self._bot.config.core.owner.lower())
+        return self.owner
 
     async def _cmd_who(self) -> None:
         sessions = [s for s in self._server._sessions if s.authenticated]
@@ -297,13 +314,15 @@ class PartylineSession:
 # ---------------------------------------------------------------------------
 
 
-def _format_irc_event(msg: "IRCMessage") -> str | None:
+def _format_irc_event(msg: "IRCMessage", text: str | None = None) -> str | None:
+    """Format an IRC event for the partyline; text overrides the (redacted) message text."""
     if msg.command == "PRIVMSG":
+        body = msg.text if text is None else text
         channel = msg.channel or msg.params[0] if msg.params else ""
-        if msg.text.startswith("\x01ACTION "):
-            action = msg.text[8:].rstrip("\x01")
+        if body.startswith("\x01ACTION "):
+            action = body[8:].rstrip("\x01")
             return f"[{channel}] * {msg.nick} {action}"
-        return f"[{channel}] <{msg.nick}> {msg.text}"
+        return f"[{channel}] <{msg.nick}> {body}"
     elif msg.command == "JOIN":
         channel = msg.params[0] if msg.params else msg.text
         return f"*** {msg.nick} ({msg.hostmask}) joined {channel}"
@@ -339,6 +358,7 @@ async def execute_partyline_command(
     channel_names: Callable[[], list[str]],
     close: Callable[[], None | Awaitable[None]] | None = None,
     line_ending: str = "\n",
+    source: str = "partyline",
 ) -> None:
     lower = line.lower().strip()
     if not lower.startswith("."):
@@ -347,6 +367,23 @@ async def execute_partyline_command(
 
     cmd, _, _ = lower[1:].partition(" ")
     raw_args = line[1 + len(cmd) :].strip()
+
+    if cmd in ("say", "join", "part", "reload", "raw", "shutdown", "restart"):
+        from pybot.core.audit import audit
+
+        # .raw may carry secrets (e.g. IDENTIFY); record only that it was used
+        details = "" if cmd == "raw" else raw_args
+        await audit(actor or "?", f"partyline.{cmd}", details=details, source=source)
+
+    from pybot.core import partyline_admin
+
+    if cmd in partyline_admin.COMMANDS:
+
+        async def say(text: str) -> None:
+            await send(f"{text}{line_ending}")
+
+        await partyline_admin.run(bot, cmd, raw_args.split(), actor, is_owner, say, source)
+        return
 
     if cmd == "quit":
         await send(f"Goodbye!{line_ending}")
@@ -368,9 +405,9 @@ async def execute_partyline_command(
             + line_ending
             + "  .say <#chan> <message>"
             + line_ending
-            + "  .join <#chan>"
+            + "  .join <#chan> [key]   (rejoined on restart)"
             + line_ending
-            + "  .part <#chan>"
+            + "  .part <#chan> [reason] (not rejoined)"
             + line_ending
             + "  .reload               (reload config + all plugins)"
             + line_ending
@@ -381,6 +418,10 @@ async def execute_partyline_command(
             + "  .raw <line>           (owner only)"
             + line_ending
             + "  .quit"
+            + line_ending
+            + "Users and channels:"
+            + line_ending
+            + line_ending.join(partyline_admin.HELP)
             + line_ending
         )
         return
@@ -404,13 +445,21 @@ async def execute_partyline_command(
         return
 
     if cmd == "join":
-        await bot.join(raw_args)
-        await send(f"Joining {raw_args}...{line_ending}")
+        words = raw_args.split()
+        if not words:
+            await send(f"Usage: .join <#chan> [key]{line_ending}")
+            return
+        await bot.join_channel(words[0], words[1] if len(words) > 1 else "")
+        await send(f"Joining {words[0]} (rejoined on restart)...{line_ending}")
         return
 
     if cmd == "part":
-        await bot.part(raw_args)
-        await send(f"Parting {raw_args}...{line_ending}")
+        words = raw_args.split(None, 1)
+        if not words:
+            await send(f"Usage: .part <#chan> [reason]{line_ending}")
+            return
+        await bot.part_channel(words[0], words[1] if len(words) > 1 else "")
+        await send(f"Parting {words[0]} (not rejoined)...{line_ending}")
         return
 
     if cmd == "reload":

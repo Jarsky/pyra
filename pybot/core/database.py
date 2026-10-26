@@ -156,9 +156,43 @@ class User(Base):
     reminders: Mapped[list["Reminder"]] = relationship(
         "Reminder", back_populates="user", cascade="all, delete-orphan"
     )
+    hosts: Mapped[list["UserHost"]] = relationship(
+        "UserHost", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def has_global_flag(self, flag: str) -> bool:
         return flag in self.global_flags
+
+    @property
+    def all_masks(self) -> list[str]:
+        """Primary hostmask plus extra hosts (requires hosts to be loaded)."""
+        return [m for m in [self.hostmask, *(h.mask for h in self.hosts)] if m]
+
+
+class UserHost(Base):
+    """An extra hostmask that identifies a user (Eggdrop's +host)."""
+
+    __tablename__ = "user_hosts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    mask: Mapped[str] = mapped_column(String(256))
+
+    user: Mapped["User"] = relationship("User", back_populates="hosts")
+
+
+class AuditEntry(Base):
+    """Who changed what: flags, users, hosts, bans, ignores, plugins, settings."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), index=True)
+    source: Mapped[str] = mapped_column(String(16))  # irc | web | partyline | system
+    actor: Mapped[str] = mapped_column(String(256))
+    action: Mapped[str] = mapped_column(String(64))
+    target: Mapped[str] = mapped_column(String(256), default="")
+    details: Mapped[str] = mapped_column(Text, default="")
 
 
 class UserFlag(Base):
@@ -420,6 +454,82 @@ async def set_channel_setting(
         setting.value = value
     else:
         session.add(ChannelSetting(channel_id=ch.id, key=key, value=value))
+
+
+async def prune_logs(session: AsyncSession, keep_days: int) -> int:
+    """Delete message log entries older than keep_days; returns how many were removed."""
+    from datetime import timedelta, timezone
+
+    from sqlalchemy import delete
+
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=keep_days)
+    # Pure SQL delete: SQLite hands back naive datetimes, so in-Python syncing can't compare them
+    result = await session.execute(
+        delete(Log).where(Log.logged_at < cutoff).execution_options(synchronize_session=False)
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
+_TRUE = ("true", "1", "yes", "on")
+
+
+def setting_enabled(value: str) -> bool:
+    return value.strip().lower() in _TRUE
+
+
+async def remember_channel(session: AsyncSession, channel_name: str, key: str = "") -> None:
+    """Mark a channel to be joined on every connect (stored as channel settings)."""
+    await set_channel_setting(session, channel_name, "autojoin", "true")
+    await set_channel_setting(session, channel_name, "join_key", key)
+
+
+async def forget_channel(session: AsyncSession, channel_name: str) -> None:
+    await set_channel_setting(session, channel_name, "autojoin", "false")
+
+
+async def remembered_channels(session: AsyncSession) -> list[tuple[str, str]]:
+    """(name, key) of channels marked with remember_channel."""
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(Channel.name, ChannelSetting.key, ChannelSetting.value)
+        .join(ChannelSetting)
+        .where(ChannelSetting.key.in_(("autojoin", "join_key")))
+        .order_by(Channel.name)
+    )
+    settings: dict[str, dict[str, str]] = {}
+    for name, key, value in result.all():
+        settings.setdefault(name, {})[key] = value
+    return [
+        (name, values.get("join_key", ""))
+        for name, values in settings.items()
+        if setting_enabled(values.get("autojoin", ""))
+    ]
+
+
+async def add_ban(
+    session: AsyncSession,
+    channel_name: str | None,
+    hostmask: str,
+    reason: str,
+    set_by: str,
+    expires_at: datetime | None = None,
+) -> Ban:
+    """Store a ban (channel_name None = global). The bot lifts it when it expires."""
+    from datetime import timezone
+
+    channel_id = (await get_or_create_channel(session, channel_name)).id if channel_name else None
+    ban = Ban(
+        channel_id=channel_id,
+        hostmask=hostmask,
+        reason=reason,
+        set_by=set_by,
+        set_at=datetime.now(tz=timezone.utc),
+        expires_at=expires_at,
+        active=True,
+    )
+    session.add(ban)
+    return ban
 
 
 async def get_plugin_setting(

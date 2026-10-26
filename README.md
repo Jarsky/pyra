@@ -26,10 +26,11 @@
 
 ## What You Get Out Of The Box
 
-- **15 built-in plugins** for moderation, utility, notes, search, seen/tell, uptime, and more.
+- **18 built-in plugins** for moderation, channel protection, flood protection, chat history, utility, notes, search, seen/tell, uptime, and more.
 - **Optional extra plugins** in `plugins_extra/` including headlines, weather, URL tools, and media helpers.
 - **Strong IRC support** including IRCv3, TLS, SASL auth, and connection flood protection.
-- **Live admin workflows** with both a web UI and partyline console.
+- **Live admin workflows** with both a web UI and partyline console, plus an audit log of
+  who changed what.
 - **Hot-reload support** so plugin updates do not require full bot restarts.
 
 ---
@@ -79,6 +80,9 @@ docker compose -f docker/docker-compose.yml restart pyra
 ```
 
 ### Native install
+
+Requires Python 3.12+ (3.14 recommended; it's what the Docker image uses). Dependencies come
+from `pyproject.toml`; for PostgreSQL or MySQL install `".[postgres]"` or `".[mysql]"` instead of `"."`.
 
 Linux/macOS:
 
@@ -211,6 +215,14 @@ See [docs/plugins.md](docs/plugins.md) for the full plugin API, config examples,
 
 Pyra uses Eggdrop-style flag-based ACL with global and per-channel overrides for owners, admins, ops, voice, ignores, and antispam exemptions.
 
+On IRC the owner is recognised by `core.owner_account` (services account, recommended) or
+`core.owner_hostmask` (`nick!user@host`), never by nick alone. Set one of them to use owner
+commands on IRC; the web UI and partyline work either way.
+
+> **Upgrading from 1.0:** the owner record used to be created as `YourNick!*@*`, which anyone
+> who took your nick could match. That mask is now cleared at startup, so set
+> `core.owner_account` or `core.owner_hostmask` before upgrading.
+
 See [docs/permissions.md](docs/permissions.md) for full reference.
 
 ---
@@ -221,10 +233,12 @@ The web UI runs on port `8080` by default:
 
 - **Default login** — on first run, owner login is bootstrapped from config:
   `username = core.owner`, `password = partyline.password`
-- **Additional admin logins** — after adding an admin user/flags, set their login password from IRC:
-  `!adduser <nick!user@host> <flags>` (auto-generates and /msgs credentials),
+- **Additional admin logins** — only users with the `a` or `n` flag can log in. Set their password from IRC:
+  `!adduser <nick!user@host> <flags>` (generates a password and /msgs it to the user if
+  their current hostmask matches, otherwise to you),
   `!setpass <nick> <password>` (owner override), or
-  `!passwd <newpassword>` (self-service for admins)
+  `!passwd <newpassword>` (self-service for admins). Password commands only work in a
+  private message to the bot.
 
 - **Dashboard** — uptime, channels, and recent activity
 - **Channels** — settings and moderation controls
@@ -247,8 +261,8 @@ pybot-ctl console
 Login credentials are the same as web by default:
 `username = core.owner`, `password = partyline.password`.
 
-For non-owner admins, credentials are the same account/password stored in the user DB
-(`!setpass` / `!passwd` commands).
+For other admins (`a` flag required), credentials are the same account/password stored in
+the user DB (`!setpass` / `!passwd` commands).
 
 Partyline provides a live admin console with bot controls, channel operations, and a real-time IRC event stream.
 
@@ -319,7 +333,10 @@ alembic revision --autogenerate -m "describe change"
 
 ## Built-in Plugins
 
-Included built-in plugins cover administration, moderation, antispam, utilities, notes, offline tells, and search.
+Included built-in plugins cover administration, moderation, channel protection (`changuard`: ban
+enforcement, autokick, auto-op/voice, ban expiry), antispam, `!history` to catch up on a channel,
+utilities, notes, offline tells, and search. Plugins can be loaded/unloaded (remembered across
+restarts), switched off per channel, and configured through forms in the web UI.
 Optional plugins in `plugins_extra/` include URL titles, weather, headlines, and additional integrations.
 
 See [docs/plugins.md](docs/plugins.md) for plugin details and [plugins_extra/OPTIONAL_PLUGINS.md](plugins_extra/OPTIONAL_PLUGINS.md) for optional extras.

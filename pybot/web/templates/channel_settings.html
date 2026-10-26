@@ -19,6 +19,28 @@
     </label>
   </div>
 
+  <div class="grid">
+    <label>Auto-op <small>(users with the o flag)</small>
+      <select name="autoop">
+        <option value="true" {% if settings.autoop in ('true','1','yes','on') %}selected{% endif %}>Enabled</option>
+        <option value="false" {% if settings.autoop not in ('true','1','yes','on') %}selected{% endif %}>Disabled</option>
+      </select>
+    </label>
+    <label>Auto-voice <small>(users with the v flag)</small>
+      <select name="autovoice">
+        <option value="true" {% if settings.autovoice in ('true','1','yes','on') %}selected{% endif %}>Enabled</option>
+        <option value="false" {% if settings.autovoice not in ('true','1','yes','on') %}selected{% endif %}>Disabled</option>
+      </select>
+    </label>
+    <label>Enforce bans on join <small>(stored bans, k and b flags)</small>
+      <select name="enforce_bans">
+        <option value="true" {% if settings.enforce_bans in ('', 'true','1','yes','on') %}selected{% endif %}>Enabled</option>
+        <option value="false" {% if settings.enforce_bans not in ('', 'true','1','yes','on') %}selected{% endif %}>Disabled</option>
+      </select>
+    </label>
+  </div>
+  <small>These need the bot to have ops in the channel.</small>
+
   <label>Greet message <small>(use {nick} and {channel})</small>
     <input type="text" name="greet_msg" value="{{ settings.greet_msg }}">
   </label>
@@ -48,4 +70,18 @@
   <button type="submit">Save Settings</button>
   <a href="/channels" role="button" class="secondary outline">Back</a>
 </form>
+
+{% if plugins %}
+<h3>Plugins in <code>{{ channel_name }}</code></h3>
+<form action="/channels/{{ channel_name }}/plugins" method="post">
+  <p><small>Unticked plugins ignore this channel completely (commands, rules and events).
+  Same as <code>!plugin off &lt;name&gt;</code>.</small></p>
+  <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));">
+    {% for name, enabled in plugins %}
+    <label><input type="checkbox" name="plugin_{{ name }}" {% if enabled %}checked{% endif %}> {{ name }}</label>
+    {% endfor %}
+  </div>
+  <button type="submit">Save Plugins</button>
+</form>
+{% endif %}
 {% endblock %}

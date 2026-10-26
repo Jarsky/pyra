@@ -35,10 +35,13 @@ class Scheduler:
         self._jobs: list[_RunningJob] = []
 
     async def start(self) -> None:
-        """Start tasks for all registered interval handlers."""
-        registry = get_registry()
-        for handler in registry.intervals:
-            self._jobs.append(self._start_job(handler))
+        """Start tasks for any interval handlers already registered.
+
+        Plugins normally load after this; the plugin loader then registers each plugin's
+        handlers with add_interval_handler() (and removes them on unload/reload).
+        """
+        for handler in get_registry().intervals:
+            self.add_interval_handler(handler)
 
     async def stop(self) -> None:
         for job in self._jobs:
@@ -56,7 +59,9 @@ class Scheduler:
         self._jobs = remaining
 
     def add_interval_handler(self, handler: IntervalHandler) -> None:
-        """Register a new interval handler at runtime (used after plugin reload)."""
+        """Start a job for an interval handler (no-op if it already has one)."""
+        if any(job.handler is handler for job in self._jobs):
+            return
         self._jobs.append(self._start_job(handler))
 
     def list_jobs(self) -> list[dict[str, str | bool | None]]:
@@ -103,6 +108,11 @@ class Scheduler:
         if handler.cron:
             return f"cron:{handler.cron}"
         if handler.seconds is not None:
+            from pybot.plugin import format_age
+
+            whole = int(handler.seconds)
+            if whole == handler.seconds:
+                return f"every {format_age(whole)}"
             return f"every {handler.seconds:g}s"
         return "unknown"
 
